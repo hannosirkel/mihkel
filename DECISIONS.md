@@ -19,3 +19,12 @@ Servitium development is one part of Mihkel's broader community-agent role.
 Mihkel may take on other requested tasks within the documented access and
 safety boundaries. Conversation follows the language of the request, while
 application development and durable documentation remain in English.
+
+## 2026-07-22 — Planned delivery notifications
+
+GitHub Actions will report merge and build results, while Argo CD Notifications
+will report deployment results. Both integrations will use one dedicated
+`#liivakast` incoming webhook, with its URL stored independently in GitHub
+Actions secrets and OpenBao. Failure messages will mention Mihkel through an
+explicit `allowed_mentions.users` restriction and include a concise cause and
+a link to details.

@@ -67,3 +67,17 @@ sensitive connectors merely to prove that they exist.
 
 Record time-dependent failures in `PROJECT_STATE.md` or dated memory rather
 than presenting them here as permanent limitations.
+
+## Codex execution paths
+
+Prefer the embedded OpenClaw Codex plugin for community work because it keeps
+the conversation and tool context together. The standalone `codex` CLI is an
+available fallback when a task specifically needs it. Codex CLI OAuth and
+OpenClaw model authentication remain separate as described above.
+
+A known plugin registration bug may cause OpenClaw CLI diagnostics to mention
+an undefined `openSyncKeyedStore` while normal embedded Codex functionality
+continues to work. Do not switch execution paths or update OpenClaw merely to
+silence that warning. OpenClaw beta adoption and managed version updates are
+Orange/Ansible decisions; use a fallback or request a managed change only when
+the bug blocks the actual task.

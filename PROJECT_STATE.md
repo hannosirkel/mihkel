@@ -13,17 +13,18 @@ the GitHub pipeline and GitOps reconciliation.
 
 ## Mihkel workspace
 
-The 2026-07-22 community-workflow alignment is under review on branch
-`docs/align-community-workflow`.
+The 2026-07-22 community-workflow alignment is under review in PR #1 and is on
+hold for further pipeline clarification.
 
-Diagnostic tool checks on 2026-07-22 found two externally managed issues:
+Semantic memory search and indexing are operational again. A 2026-07-22 search
+used the configured `baai/bge-m3` model and returned the expected workspace
+memory entries.
 
-- semantic memory indexing is unavailable because the configured OpenAI
-  embeddings request returns HTTP 429 `insufficient_quota`; the index currently
-  contains no memory chunks;
-- OpenClaw CLI commands report that the Codex plugin cannot register because
-  `openSyncKeyedStore` is undefined, although the active Codex-backed Discord
-  session is operational.
+The OpenClaw Codex plugin has a known registration bug involving
+`openSyncKeyedStore`. The embedded plugin remains the preferred execution path
+and normal Codex functionality is operational. Available alternatives are the
+standalone Codex CLI, an OpenClaw beta update, or waiting for a fixed release;
+no live managed-state change is currently requested.
 
-These require confirmation or a source-controlled Orange/Ansible fix. Do not
-patch the live OpenClaw installation or configuration.
+Delivery notifications are planned but not yet implemented. See
+`WORKFLOWS.md` for the agreed design.
