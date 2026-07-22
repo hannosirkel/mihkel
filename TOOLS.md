@@ -41,3 +41,29 @@ OpenClaw configuration, plugins, service state, pinned `/opt` installations,
 managed command links, credentials, baseline packages, Docker configuration,
 and Git credential/hook plumbing are inspect-only. Diagnose with read-only
 commands and request the corresponding Orange repository change.
+
+## Capability inventory
+
+Codex and OpenClaw expose tools dynamically, so inspect the tools available in
+the current turn instead of assuming a fixed catalog. The normal capability
+groups are:
+
+- project-local filesystem editing, shell commands, Git, tests, Docker, and
+  disposable local tooling;
+- repository-scoped GitHub operations through Git and `gh`;
+- Discord history and messaging through OpenClaw's `message` tool;
+- web retrieval and current-information search;
+- image generation and inspection, plus PDF, audio, and video helpers when the
+  corresponding tool is available;
+- OpenClaw sessions, goals, memory retrieval, and reusable skills;
+- explicitly installed connectors, whose data or external mutations must stay
+  within the user's requested scope.
+
+Read the matching skill before using a specialized capability. Verify a tool
+with the smallest safe operation that proves the needed path: version or status
+checks for local tools, read-only queries for external systems, native tests for
+projects, and an actual endpoint check for a deployed service. Do not exercise
+sensitive connectors merely to prove that they exist.
+
+Record time-dependent failures in `PROJECT_STATE.md` or dated memory rather
+than presenting them here as permanent limitations.

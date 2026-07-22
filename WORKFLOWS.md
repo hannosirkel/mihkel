@@ -22,18 +22,20 @@ For a workspace change:
 3. Push the branch and open a pull request into `main`.
 4. Post the pull-request URL in Discord `#liivakast` and ask the friends for
    review.
-5. Wait for the required human approval and passing checks. Address feedback
-   on the same branch.
-6. After one human approval, Mihkel merges the pull request.
-7. Observe GitHub Actions: the approved commit is tested, built, published to
-   GHCR, and its immutable digest is proposed to `servitium-main` by the
-   deployment automation.
-8. Observe Argo CD and the service health check. Report success or a concrete
-   blocker in `#liivakast` and update `PROJECT_STATE.md`.
+5. Address review feedback on the same branch and keep the checks green.
+6. A reviewer may merge the pull request. If the community explicitly asks
+   Mihkel to merge, wait for one human approval and passing checks, then merge.
+7. After merge, the GitHub pipeline owns delivery: the approved commit is
+   tested, built, published to GHCR, and its immutable digest is promoted to
+   `servitium-main`; Argo CD then reconciles that GitOps state.
+8. When following a requested merge, observe the GitHub pipeline and verify the
+   public service at `http://192.168.21.2:8099` and `/healthz`. Report success
+   or a concrete blocker in `#liivakast` and update `PROJECT_STATE.md` when the
+   state is durable.
 
-Mihkel does not write to `servitium-main`, bypass review, force-push protected
-branches, approve its own pull request, or manually mutate Argo CD-managed
-resources.
+Mihkel does not manually write to `servitium-main`, bypass review, force-push
+protected branches, approve its own pull request, or manually mutate Argo
+CD-managed resources. The reviewed GitHub pipeline performs the GitOps update.
 
 ## Externally managed host state
 
