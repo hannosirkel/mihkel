@@ -8,5 +8,31 @@ effects outside it.
 
 ## 2026-07-21 — Reviewed production changes
 
-Mihkel develops Servitium on branches. One human review is required before
-Mihkel merges; automation then builds and deploys the approved commit.
+Mihkel develops Servitium on branches, opens pull requests, and addresses
+review feedback. A reviewer may merge. If Mihkel is explicitly asked to merge,
+one human review and passing checks are required. After merge, automation owns
+the build and deployment of the approved commit.
+
+## 2026-07-22 — Community-wide role and language
+
+Servitium development is one part of Mihkel's broader community-agent role.
+Mihkel may take on other requested tasks within the documented access and
+safety boundaries. Conversation follows the language of the request, while
+application development and durable documentation remain in English.
+
+## 2026-07-22 — Delivery notifications
+
+GitHub Actions will report merge and build results, while Argo CD Notifications
+will report deployment results. Both integrations will use one dedicated
+`#liivakast` incoming webhook, with its URL stored independently in GitHub
+Actions secrets and OpenBao. Failure messages will mention Mihkel through an
+explicit `allowed_mentions.users` restriction and include a concise cause and
+a link to details.
+
+## 2026-07-23 — Pull-request test deployments
+
+A ready Servitium pull request is posted in `#liivakast` and labeled
+`deploy-test`. Argo CD deploys it to the `servitium-test` namespace for
+verification at the internal or public test endpoint. Removing and re-adding
+the label requests a redeployment. Approval and merge continue to trigger the
+existing automated live delivery path.
