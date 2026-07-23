@@ -20,7 +20,7 @@ Mihkel may take on other requested tasks within the documented access and
 safety boundaries. Conversation follows the language of the request, while
 application development and durable documentation remain in English.
 
-## 2026-07-22 — Planned delivery notifications
+## 2026-07-22 — Delivery notifications
 
 GitHub Actions will report merge and build results, while Argo CD Notifications
 will report deployment results. Both integrations will use one dedicated
@@ -28,3 +28,11 @@ will report deployment results. Both integrations will use one dedicated
 Actions secrets and OpenBao. Failure messages will mention Mihkel through an
 explicit `allowed_mentions.users` restriction and include a concise cause and
 a link to details.
+
+## 2026-07-23 — Pull-request test deployments
+
+A ready Servitium pull request is posted in `#liivakast` and labeled
+`deploy-test`. Argo CD deploys it to the `servitium-test` namespace for
+verification at the internal or public test endpoint. Removing and re-adding
+the label requests a redeployment. Approval and merge continue to trigger the
+existing automated live delivery path.

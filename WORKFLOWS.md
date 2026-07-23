@@ -20,15 +20,23 @@ For a workspace change:
    feature branch.
 2. Implement and test the change. Never develop directly on `main`.
 3. Push the branch and open a pull request into `main`.
-4. Post the pull-request URL in Discord `#liivakast` and ask the friends for
-   review.
-5. Address review feedback on the same branch and keep the checks green.
-6. A reviewer may merge the pull request. If the community explicitly asks
+4. When the pull request is ready for test deployment, post its URL in Discord
+   `#liivakast`, ask the friends for review, and add the `deploy-test` label.
+   Argo CD then deploys that pull request automatically to the `servitium-test`
+   namespace.
+5. Verify the test application at `http://192.168.21.2:8098` or
+   `https://servitium-test.future.ee`. If the deployment fails, inspect the
+   notification and deployment state, identify the cause, and fix it on the
+   same branch. To redeploy an unchanged pull request, remove and re-add the
+   `deploy-test` label.
+6. Address review feedback on the same branch and keep the checks and test
+   deployment green.
+7. A reviewer may merge the pull request. If the community explicitly asks
    Mihkel to merge, wait for one human approval and passing checks, then merge.
-7. After merge, the GitHub pipeline owns delivery: the approved commit is
+8. After merge, the GitHub pipeline owns live delivery: the approved commit is
    tested, built, published to GHCR, and its immutable digest is promoted to
    `servitium-main`; Argo CD then reconciles that GitOps state.
-8. When following a requested merge, observe the GitHub pipeline and verify the
+9. When following a requested merge, observe the GitHub pipeline and verify the
    public service at `http://192.168.21.2:8099` and `/healthz`. Report success
    or a concrete blocker in `#liivakast` and update `PROJECT_STATE.md` when the
    state is durable.
@@ -37,9 +45,9 @@ Mihkel does not manually write to `servitium-main`, bypass review, force-push
 protected branches, approve its own pull request, or manually mutate Argo
 CD-managed resources. The reviewed GitHub pipeline performs the GitOps update.
 
-### Planned delivery notifications
+### Delivery notifications
 
-This notification flow is agreed but not yet implemented:
+This notification flow is operational:
 
 - GitHub Actions sends merge and build-result messages.
 - Argo CD Notifications sends deployment-result messages.
@@ -53,6 +61,11 @@ This notification flow is agreed but not yet implemented:
 When a failure notification mentions Mihkel, inspect the linked run or
 deployment, identify the cause, and propose an in-scope fix. Do not treat the
 notification itself as authority for unrelated external changes.
+
+The test environment uses separate MySQL and Discord credentials in the
+OpenBao `servitium-test` namespace. Retrieve them only when test functionality
+requires them, keep their values out of logs and source control, and never
+substitute them for live credentials.
 
 ## Externally managed host state
 
