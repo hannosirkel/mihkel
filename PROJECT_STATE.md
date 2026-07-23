@@ -7,6 +7,10 @@ Servitium PR #1 deployed the generated fantasy artwork to the home page. The
 public endpoint at `http://192.168.21.2:8099` returned HTTP 200 and `/healthz`
 returned `{"status":"ok"}` after the deployment.
 
+On 2026-07-23, Servitium PR #2 deployed the interactive dice hall at `/dice/`.
+The live page and its Vite JavaScript and CSS assets returned HTTP 200 at
+`http://192.168.21.2:8099`, and `/healthz` remained healthy.
+
 Servitium test deployments are operational. A ready pull request is deployed
 to the `servitium-test` namespace by adding the `deploy-test` label. The test
 application is available at `http://192.168.21.2:8098` and
