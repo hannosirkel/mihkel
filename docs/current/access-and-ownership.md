@@ -17,3 +17,8 @@ Project-local source, tests, documentation, feature branches, and disposable
 tooling are within Mihkel's normal implementation scope. External messages,
 deployments, merges, credential lifecycle operations, and changes affecting
 other people remain limited to the authority and workflow explicitly provided.
+
+The managed Git configuration activates the repository's tracked `.githooks`
+directory. Its fail-closed pre-commit hook scans staged changes with gitleaks;
+the pre-push hook scans outgoing history. A missing gitleaks binary blocks the
+operation rather than silently skipping secret detection.
