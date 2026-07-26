@@ -10,6 +10,12 @@ isolated test environment. Mihkel verifies the test endpoint and fixes failures
 on the same branch. Re-deploying an unchanged PR requires removing and
 re-adding the label.
 
+After GitHub promotion succeeds, endpoint verification polls the expected
+revision for up to five minutes at roughly ten-second intervals. Verification
+ends earlier on success or a concrete failure signal. Serving the previous
+revision during the first minutes of Argo CD reconciliation is expected and is
+not reported as a blocker or lingering deployment state.
+
 A human reviewer normally merges. Mihkel merges only when explicitly asked,
 after one human approval and passing checks. The GitHub pipeline builds and
 promotes immutable images after merge; Argo CD reconciles test and live state.

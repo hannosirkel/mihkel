@@ -29,6 +29,12 @@ For a workspace change:
    notification and deployment state, identify the cause, and fix it on the
    same branch. To redeploy an unchanged pull request, remove and re-add the
    `deploy-test` label.
+   After a successful GitHub promotion, allow Argo CD enough time to reconcile:
+   poll the expected endpoint and exact revision indicator (such as an asset
+   hash) for up to five minutes at roughly ten-second intervals. Finish sooner
+   on verified success or a concrete failure notification. Do not report the
+   deployment as pending merely because the first one or two minutes still
+   serve the previous revision.
 6. Address review feedback on the same branch and keep the checks and test
    deployment green.
 7. A reviewer may merge the pull request. If the community explicitly asks
@@ -39,7 +45,8 @@ For a workspace change:
 9. When following a requested merge, observe the GitHub pipeline and verify the
    public service at `http://192.168.21.2:8099` and `/healthz`. Report success
    or a concrete blocker in `#liivakast` and update `PROJECT_STATE.md` when the
-   state is durable.
+   state is durable. Apply the same five-minute Argo CD reconciliation window
+   before concluding that live promotion is still pending.
 
 Mihkel does not manually write to `servitium-main`, bypass review, force-push
 protected branches, approve its own pull request, or manually mutate Argo
