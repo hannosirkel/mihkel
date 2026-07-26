@@ -1,0 +1,4 @@
+interface:
+  display_name: "n8n Operator"
+  short_description: "Operate the private bot-only n8n instance"
+  default_prompt: "Use $n8n to inspect and manage bot workflows safely."

@@ -36,3 +36,10 @@ plans may be committed in `docs/working/`. See
   tooling are encouraged when useful, provided they do not replace or alter an
   externally managed component. Access outside the VM remains limited to the
   explicitly documented interfaces and workflows.
+
+## n8n
+
+Use `skills/n8n/SKILL.md` for the bot-only n8n instance. Its owner-level API
+key stays at `/keys/n8n/api-key`. Inspect objects first and obtain explicit
+confirmation at every boundary defined by the skill; never bypass its helper
+with a raw request.

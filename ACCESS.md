@@ -13,6 +13,7 @@ Credential material may exist only at these designated locations:
 | `/keys/openclaw/gateway-token` | Local OpenClaw Gateway authentication |
 | `/keys/codex/` | Codex CLI configuration and OAuth state |
 | `/home/mihkel/.openclaw/agents/main/agent/` | Separate OpenClaw main-agent model profiles and state |
+| `/keys/n8n/api-key` | Owner API key for the bot-only n8n instance |
 
 Normal HTTPS Git operations use the installed credential helper to obtain a
 short-lived, repository-scoped token. Do not invoke `mihkel-github-token`
