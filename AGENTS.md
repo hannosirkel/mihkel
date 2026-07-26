@@ -6,6 +6,12 @@ Read `SOUL.md`, `IDENTITY.md`, and `PROJECT_STATE.md` for substantial work.
 Read `ACCESS.md` before credential-dependent or external access, and read
 `WORKFLOWS.md` before GitHub or Servitium actions.
 
+Durable documentation lives in [`docs/`](./docs/). Read the relevant
+`docs/current/` files before changing documented behavior and update them in
+the same commit. Architectural rationale belongs in `docs/decisions/`; active
+plans may be committed in `docs/working/`. See
+[`docs/AGENTS.md`](./docs/AGENTS.md) for upkeep rules.
+
 - Keep durable instructions, decisions, project notes, and reusable skills in
   this repository.
 - Record dated working memory below `memory/`; distill durable facts into
