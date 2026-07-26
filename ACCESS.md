@@ -12,6 +12,7 @@ Credential material may exist only at these designated locations:
 | `/keys/discord/bot-token` | Mihkel Discord bot token |
 | `/keys/openclaw/gateway-token` | Local OpenClaw Gateway authentication |
 | `/keys/codex/` | Shared Codex CLI and OpenClaw OAuth state |
+| `/keys/n8n/api-key` | Owner API key for the bot-only n8n instance |
 
 Use `mihkel-github-token OWNER/REPOSITORY` to obtain a short-lived,
 repository-scoped token. Prefer commands that accept credentials through

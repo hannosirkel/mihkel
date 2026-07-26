@@ -16,3 +16,10 @@ work.
 - The VM is a disposable sandbox. Installing tools and maintaining it is
   encouraged when useful, but access outside the VM remains limited to the
   explicitly documented interfaces.
+
+## n8n
+
+Use `skills/n8n/SKILL.md` for the bot-only n8n instance. Its owner-level API
+key stays at `/keys/n8n/api-key`. Inspect objects first and obtain explicit
+confirmation at every boundary defined by the skill; never bypass its helper
+with a raw request.
