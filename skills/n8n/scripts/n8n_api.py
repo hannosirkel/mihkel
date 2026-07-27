@@ -19,13 +19,14 @@ import urllib.request
 
 BASE_URL_PRODUCTION = "https://orange.future.ee:8013/api/v1"
 API_KEY_FILE_PRODUCTION = Path("/keys/n8n/api-key")
-WEBHOOK_URL_PRODUCTION = (
-    "https://orange.future.ee:8013/webhook/mihkel-servers"
-)
+WEBHOOK_URLS_PRODUCTION = {
+    "servers": "https://orange.future.ee:8013/webhook/mihkel-servers",
+    "salmon": "https://orange.future.ee:8013/webhook/mihkel-salmon",
+}
 WEBHOOK_KEY_FILE_PRODUCTION = Path("/keys/n8n/webhook-key")
 BASE_URL = BASE_URL_PRODUCTION
 API_KEY_FILE = API_KEY_FILE_PRODUCTION
-WEBHOOK_URL = WEBHOOK_URL_PRODUCTION
+WEBHOOK_URLS = WEBHOOK_URLS_PRODUCTION
 WEBHOOK_KEY_FILE = WEBHOOK_KEY_FILE_PRODUCTION
 ENV_KEYS: tuple[str, ...] = ()
 REQUEST_TIMEOUT_SECONDS = 15
@@ -138,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_confirmation(add_id_command(subparsers, "execution-stop"))
     add_confirmation(add_id_command(subparsers, "execution-delete"))
     subparsers.add_parser("servers")
+    subparsers.add_parser("salmon")
     return parser
 
 
@@ -358,7 +360,7 @@ class ApiClient:
 
 
 class WebhookClient:
-    """Invoke the one approved production workflow webhook."""
+    """Invoke an approved fixed production workflow webhook."""
 
     def __init__(self) -> None:
         self.webhook_key = read_webhook_key()
@@ -368,9 +370,13 @@ class WebhookClient:
             urllib.request.HTTPSHandler(context=self.context),
         )
 
-    def invoke_servers(self) -> Any:
+    def invoke(self, operation: str) -> Any:
+        try:
+            webhook_url = WEBHOOK_URLS[operation]
+        except KeyError:
+            raise CliError("unsupported webhook operation") from None
         request = urllib.request.Request(
-            WEBHOOK_URL,
+            webhook_url,
             data=b"{}",
             method="POST",
             headers={
@@ -546,8 +552,8 @@ def main(arguments: list[str] | None = None) -> int:
     parser = build_parser()
     try:
         parsed_arguments = parser.parse_args(arguments)
-        if parsed_arguments.command == "servers":
-            result = WebhookClient().invoke_servers()
+        if parsed_arguments.command in WEBHOOK_URLS:
+            result = WebhookClient().invoke(parsed_arguments.command)
             credential_context = False
         else:
             result, credential_context = dispatch(

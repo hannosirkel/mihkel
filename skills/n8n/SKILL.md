@@ -1,6 +1,6 @@
 ---
 name: n8n
-description: Use when Mihkel needs to inspect or manage workflows, credentials, or executions on the private bot-only n8n instance, or invoke the fixed servers workflow.
+description: Use when Mihkel needs to inspect or manage workflows, credentials, or executions on the private bot-only n8n instance, or invoke the fixed servers or salmon workflow.
 ---
 
 # n8n
@@ -10,8 +10,9 @@ description: Use when Mihkel needs to inspect or manage workflows, credentials, 
 Use the narrow helper for every n8n operation. It targets
 `https://orange.future.ee:8013/api/v1`, reads the owner API key only from
 `/keys/n8n/api-key`, verifies TLS, and exposes no arbitrary-request command.
-The `servers` command separately posts an empty JSON object to the fixed
-`https://orange.future.ee:8013/webhook/mihkel-servers` endpoint with the
+The `servers` and `salmon` commands separately post an empty JSON object to
+their fixed `https://orange.future.ee:8013/webhook/mihkel-servers` and
+`https://orange.future.ee:8013/webhook/mihkel-salmon` endpoints with the
 managed `/keys/n8n/webhook-key`.
 
 ```bash
@@ -37,7 +38,7 @@ or packages.
 | Workflows | `workflow-list`, `workflow-get`, `workflow-create`, `workflow-update`, `workflow-activate`, `workflow-deactivate`, `workflow-delete` |
 | Credentials | `credential-list`, `credential-get`, `credential-create`, `credential-update`, `credential-delete` |
 | Executions | `execution-list`, `execution-get`, `execution-retry`, `execution-stop`, `execution-delete` |
-| Automation | `servers` |
+| Automation | `servers`, `salmon` |
 
 Use `COMMAND --help` for arguments. Lists follow n8n cursors within a bounded
 page limit. Safe GET requests receive bounded retries; mutations do not.
@@ -48,11 +49,12 @@ python3 skills/n8n/scripts/n8n_api.py workflow-get WORKFLOW_ID
 python3 skills/n8n/scripts/n8n_api.py workflow-create --input /path/to/workflow.json
 python3 skills/n8n/scripts/n8n_api.py execution-list --status error
 python3 skills/n8n/scripts/n8n_api.py servers
+python3 skills/n8n/scripts/n8n_api.py salmon
 ```
 
-`servers` has no URL, path, header, key-file, retry, redirect, or insecure-TLS
-override. It makes one attempt and returns only the workflow's sanitized JSON
-response.
+`servers` and `salmon` have no URL, path, header, key-file, body, retry,
+redirect, or insecure-TLS override. Each posts exactly `{}` once and returns
+only the workflow's sanitized JSON response.
 
 ## Confirmation boundary
 

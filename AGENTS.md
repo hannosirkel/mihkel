@@ -42,5 +42,6 @@ plans may be committed in `docs/working/`. See
 Use `skills/n8n/SKILL.md` for the bot-only n8n instance. Its owner-level API
 key stays at `/keys/n8n/api-key`. Inspect objects first and obtain explicit
 confirmation at every boundary defined by the skill; never bypass its helper
-with a raw request. The fixed `servers` operation uses the separately managed
-`/keys/n8n/webhook-key`; it does not grant arbitrary webhook access.
+with a raw request. The fixed `servers` and `salmon` operations use the
+separately managed `/keys/n8n/webhook-key`; they do not grant arbitrary
+webhook access.
