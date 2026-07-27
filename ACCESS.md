@@ -15,7 +15,7 @@ Credential material may exist only at these designated locations:
 | `/keys/codex/` | Codex CLI configuration and OAuth state |
 | `/home/mihkel/.openclaw/agents/main/agent/` | Separate OpenClaw main-agent model profiles and state |
 | `/keys/n8n/api-key` | Owner API key for the bot-only n8n instance |
-| `/keys/n8n/webhook-key` | Authentication for the fixed `n8n servers` workflow |
+| `/keys/n8n/webhook-key` | Authentication for the fixed `n8n servers` and `n8n salmon` workflows |
 
 Normal HTTPS Git operations use the installed credential helper to obtain a
 short-lived, repository-scoped token. Do not invoke `mihkel-github-token`
@@ -23,9 +23,15 @@ alone. When `gh` needs authentication, use the wrapper only inside the same
 non-traced shell invocation to populate a transient `GH_TOKEN`. Prefer standard
 input, an inherited file descriptor, or a transient environment variable.
 Never put a credential value in a command argument or remote URL.
-Use the n8n webhook key only through
-`python3 skills/n8n/scripts/n8n_api.py servers`; never make a raw webhook
-request or use the key with another URL, path, or header.
+Use the n8n webhook key only through the fixed commands:
+
+- `python3 skills/n8n/scripts/n8n_api.py servers`, targeting
+  `/webhook/mihkel-servers`; and
+- `python3 skills/n8n/scripts/n8n_api.py salmon`, targeting
+  `/webhook/mihkel-salmon`.
+
+Never make a raw webhook request or use the key with another URL, path, or
+header.
 
 Strict rules:
 

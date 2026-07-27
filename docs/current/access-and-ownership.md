@@ -6,8 +6,11 @@ files, placed in command arguments or Git history, or disclosed in chat.
 Repository-scoped Git operations use the installed credential helper; GitHub
 CLI access uses a transient token in the same non-traced shell invocation.
 Bot-only n8n access uses its reviewed helper: owner API operations read the
-managed API key, while `servers` alone reads the separate webhook key and
-invokes one fixed TLS-verified endpoint without redirects or retries.
+managed API key, while only the fixed `servers` and `salmon` commands read the
+separate webhook key. They post `{}` once to their respective
+`/webhook/mihkel-servers` and `/webhook/mihkel-salmon` TLS-verified endpoints
+without redirects or retries. Raw webhook requests and other paths remain
+prohibited.
 
 Orange and Ansible own the host baseline: OpenClaw configuration and plugins,
 service state, pinned software, credentials, users, SSH, networking, updates,
