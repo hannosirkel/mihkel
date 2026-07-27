@@ -5,11 +5,13 @@ The bot-only n8n instance runs one deterministic workflow named
 every five minutes and sends newly eligible listings to Discord through the
 managed Mildred credential. It has no server ordering capability.
 
-The fixed authenticated webhook `/webhook/mihkel-servers` supports the exact
-case-insensitive standalone command `n8n servers`. It fetches fresh inventory
-and returns up to three hardware-matching servers ordered by monthly cost,
-including results above the immediate-alert ceiling. The on-demand path does
-not alter scheduled-alert state.
+When Mihkel receives an invoked request for `n8n servers`, Mihkel calls the
+reviewed n8n helper's fixed authenticated `/webhook/mihkel-servers` operation
+and returns its response in the current conversation. n8n does not poll
+Discord, and `n8n servers` is not an OpenClaw wake pattern. The workflow fetches
+fresh inventory and returns up to three hardware-matching servers ordered by
+monthly cost, including results above the immediate-alert ceiling. The
+on-demand path does not alter scheduled-alert state.
 
 Settings live in the workflow's `Central Configuration` node. Hardware requires
 at least 64 GB RAM, two physical SSD or NVMe drives of at least 480 GB each, and
