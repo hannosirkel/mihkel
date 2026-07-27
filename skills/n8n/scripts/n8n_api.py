@@ -19,8 +19,14 @@ import urllib.request
 
 BASE_URL_PRODUCTION = "https://orange.future.ee:8013/api/v1"
 API_KEY_FILE_PRODUCTION = Path("/keys/n8n/api-key")
+WEBHOOK_URL_PRODUCTION = (
+    "https://orange.future.ee:8013/webhook/mihkel-servers"
+)
+WEBHOOK_KEY_FILE_PRODUCTION = Path("/keys/n8n/webhook-key")
 BASE_URL = BASE_URL_PRODUCTION
 API_KEY_FILE = API_KEY_FILE_PRODUCTION
+WEBHOOK_URL = WEBHOOK_URL_PRODUCTION
+WEBHOOK_KEY_FILE = WEBHOOK_KEY_FILE_PRODUCTION
 ENV_KEYS: tuple[str, ...] = ()
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_SAFE_ATTEMPTS = 3
@@ -131,6 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_confirmation(add_id_command(subparsers, "execution-stop"))
     add_confirmation(add_id_command(subparsers, "execution-delete"))
+    subparsers.add_parser("servers")
     return parser
 
 
@@ -205,6 +212,19 @@ def read_api_key() -> str:
     if not api_key:
         raise ApiError("configuration", "API key file is empty")
     return api_key
+
+
+def read_webhook_key() -> str:
+    try:
+        webhook_key = WEBHOOK_KEY_FILE.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError) as error:
+        raise ApiError(
+            "configuration",
+            f"unable to read webhook key file: {error}",
+        ) from None
+    if not webhook_key:
+        raise ApiError("configuration", "webhook key file is empty")
+    return webhook_key
 
 
 def sanitize(value: Any, *, credential_context: bool = False) -> Any:
@@ -337,6 +357,53 @@ class ApiClient:
         )
 
 
+class WebhookClient:
+    """Invoke the one approved production workflow webhook."""
+
+    def __init__(self) -> None:
+        self.webhook_key = read_webhook_key()
+        self.context = ssl.create_default_context()
+        self.opener = urllib.request.build_opener(
+            NoRedirectHandler(),
+            urllib.request.HTTPSHandler(context=self.context),
+        )
+
+    def invoke_servers(self) -> Any:
+        request = urllib.request.Request(
+            WEBHOOK_URL,
+            data=b"{}",
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-N8N-Webhook-Key": self.webhook_key,
+            },
+        )
+        try:
+            with self.opener.open(
+                request,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            ) as response:
+                return redact_value(
+                    parse_response(response.read()),
+                    self.webhook_key,
+                )
+        except urllib.error.HTTPError as error:
+            payload = parse_response(error.read(), allow_empty=True)
+            message = response_message(payload, f"HTTP {error.code}")
+            raise ApiError(
+                "http",
+                scrub(message, self.webhook_key),
+                error.code,
+            ) from None
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            message = str(error.reason if hasattr(error, "reason") else error)
+            raise ApiError(
+                "transport",
+                scrub(message, self.webhook_key),
+            ) from None
+
+
 def parse_response(raw_value: bytes, *, allow_empty: bool = False) -> Any:
     if not raw_value:
         if allow_empty:
@@ -350,6 +417,19 @@ def parse_response(raw_value: bytes, *, allow_empty: bool = False) -> Any:
 
 def scrub(value: str, api_key: str) -> str:
     return value.replace(api_key, "[REDACTED]") if api_key else value
+
+
+def redact_value(value: Any, secret: str) -> Any:
+    if isinstance(value, str):
+        return scrub(value, secret)
+    if isinstance(value, list):
+        return [redact_value(item, secret) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: redact_value(item, secret)
+            for key, item in value.items()
+        }
+    return value
 
 
 def dispatch(arguments: argparse.Namespace, client: ApiClient) -> tuple[Any, bool]:
@@ -466,7 +546,14 @@ def main(arguments: list[str] | None = None) -> int:
     parser = build_parser()
     try:
         parsed_arguments = parser.parse_args(arguments)
-        result, credential_context = dispatch(parsed_arguments, ApiClient())
+        if parsed_arguments.command == "servers":
+            result = WebhookClient().invoke_servers()
+            credential_context = False
+        else:
+            result, credential_context = dispatch(
+                parsed_arguments,
+                ApiClient(),
+            )
         print(stable_json(sanitize(result, credential_context=credential_context)))
         return 0
     except CliError as error:

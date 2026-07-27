@@ -13,6 +13,7 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import unittest
+import urllib.error
 from unittest import mock
 
 
@@ -88,6 +89,16 @@ class N8nApiTests(unittest.TestCase):
         self.module.BASE_URL = (
             f"http://127.0.0.1:{self.server.server_address[1]}/api/v1"
         )
+        self.webhook_key_path = Path(self.temp_directory.name) / "webhook-key"
+        self.webhook_key = "sentinel-webhook-value"
+        self.webhook_key_path.write_text(
+            self.webhook_key + "\n", encoding="utf-8"
+        )
+        self.module.WEBHOOK_KEY_FILE = self.webhook_key_path
+        self.module.WEBHOOK_URL = (
+            f"http://127.0.0.1:{self.server.server_address[1]}"
+            "/webhook/mihkel-servers"
+        )
         FakeN8nHandler.requests = []
         FakeN8nHandler.responses = []
 
@@ -113,12 +124,24 @@ class N8nApiTests(unittest.TestCase):
             self.module.API_KEY_FILE_PRODUCTION,
             Path("/keys/n8n/api-key"),
         )
+        self.assertEqual(
+            self.module.WEBHOOK_URL_PRODUCTION,
+            "https://orange.future.ee:8013/webhook/mihkel-servers",
+        )
+        self.assertEqual(
+            self.module.WEBHOOK_KEY_FILE_PRODUCTION,
+            Path("/keys/n8n/webhook-key"),
+        )
         self.assertNotIn("N8N_BASE_URL", self.module.__dict__.get("ENV_KEYS", ()))
         parser_help = self.module.build_parser().format_help()
         self.assertNotIn("--api-key", parser_help)
         self.assertNotIn("--base-url", parser_help)
         self.assertNotIn("--insecure", parser_help)
         self.assertNotIn("--path", parser_help)
+        self.assertNotIn("--webhook-url", parser_help)
+        self.assertNotIn("--webhook-key", parser_help)
+        self.assertNotIn("--header", parser_help)
+        self.assertNotIn("--retry", parser_help)
 
     def test_tls_uses_verified_default_context(self) -> None:
         self.module.BASE_URL = self.module.BASE_URL_PRODUCTION
@@ -131,6 +154,105 @@ class N8nApiTests(unittest.TestCase):
                 for handler in client.opener.handlers
             )
         )
+        webhook_client = self.module.WebhookClient()
+        self.assertTrue(webhook_client.context.check_hostname)
+        self.assertEqual(webhook_client.context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(
+            any(
+                isinstance(handler, self.module.NoRedirectHandler)
+                for handler in webhook_client.opener.handlers
+            )
+        )
+
+    def test_servers_posts_exact_fixed_webhook_request_once(self) -> None:
+        FakeN8nHandler.responses = [
+            (200, {"servers": [{"name": "Example", "online": True}]}),
+        ]
+        result, stdout, stderr = self.run_cli("servers")
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(
+            json.loads(stdout),
+            {"servers": [{"name": "Example", "online": True}]},
+        )
+        self.assertEqual(len(FakeN8nHandler.requests), 1)
+        request = FakeN8nHandler.requests[0]
+        self.assertEqual(request["method"], "POST")
+        self.assertEqual(request["path"], "/webhook/mihkel-servers")
+        self.assertEqual(request["body"], {})
+        normalized_headers = {
+            key.lower(): value for key, value in request["headers"].items()
+        }
+        self.assertEqual(
+            normalized_headers["x-n8n-webhook-key"],
+            self.webhook_key,
+        )
+        self.assertNotIn(self.webhook_key, stdout + stderr)
+
+    def test_servers_does_not_retry_http_or_transport_failures(self) -> None:
+        FakeN8nHandler.responses = [
+            (503, {"message": "temporary sentinel-webhook-value"}),
+            (200, {"must": "not run"}),
+        ]
+        result, stdout, stderr = self.run_cli("servers")
+        self.assertEqual(result, 1)
+        self.assertEqual(stdout, "")
+        self.assertEqual(len(FakeN8nHandler.requests), 1)
+        self.assertNotIn(self.webhook_key, stderr)
+
+        opener = mock.Mock()
+        opener.open.side_effect = urllib.error.URLError("unavailable")
+        with mock.patch.object(
+            self.module.urllib.request,
+            "build_opener",
+            return_value=opener,
+        ):
+            result, stdout, _stderr = self.run_cli("servers")
+        self.assertEqual(result, 1)
+        self.assertEqual(stdout, "")
+        opener.open.assert_called_once()
+
+    def test_servers_rejects_redirects_and_invalid_json(self) -> None:
+        redirect = urllib.error.HTTPError(
+            self.module.WEBHOOK_URL,
+            302,
+            "redirect",
+            {"Location": "https://example.invalid/"},
+            io.BytesIO(b"{}"),
+        )
+        invalid_response = mock.MagicMock()
+        invalid_response.__enter__.return_value.read.return_value = b"not json"
+        empty_response = mock.MagicMock()
+        empty_response.__enter__.return_value.read.return_value = b""
+        for side_effect in (redirect, invalid_response, empty_response):
+            with self.subTest(side_effect=type(side_effect).__name__):
+                opener = mock.Mock()
+                if isinstance(side_effect, Exception):
+                    opener.open.side_effect = side_effect
+                else:
+                    opener.open.return_value = side_effect
+                with mock.patch.object(
+                    self.module.urllib.request,
+                    "build_opener",
+                    return_value=opener,
+                ):
+                    result, stdout, stderr = self.run_cli("servers")
+                self.assertEqual(result, 1)
+                self.assertEqual(stdout, "")
+                self.assertNotIn(self.webhook_key, stderr)
+                opener.open.assert_called_once()
+
+    def test_servers_rejects_empty_key_without_network_access(self) -> None:
+        self.webhook_key_path.write_text("", encoding="utf-8")
+        with mock.patch.object(
+            self.module.urllib.request,
+            "build_opener",
+        ) as build_opener:
+            result, stdout, stderr = self.run_cli("servers")
+        self.assertEqual(result, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("webhook key file is empty", stderr)
+        build_opener.assert_not_called()
 
     def test_header_pagination_and_stable_json(self) -> None:
         FakeN8nHandler.responses = [
@@ -369,6 +491,7 @@ class N8nApiTests(unittest.TestCase):
             "install-package",
         }
         self.assertTrue(commands.isdisjoint(forbidden))
+        self.assertIn("servers", commands)
         result, stdout, stderr = self.run_cli(
             "raw",
             "GET",
