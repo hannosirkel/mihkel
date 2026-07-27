@@ -1,0 +1,583 @@
+{
+  "name": "Estonian Salmon Price Monitor",
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1000,
+        -200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scheduled-context",
+      "name": "Scheduled Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -800,
+        -200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "mode",
+              "name": "mode",
+              "value": "scheduled",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "webhook",
+      "name": "On-demand Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        200
+      ],
+      "webhookId": "mihkel-salmon",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mihkel-webhook-auth",
+          "name": "Mihkel Webhook Auth"
+        }
+      },
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mihkel-salmon",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "ondemand-context",
+      "name": "On-demand Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -800,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "mode",
+              "name": "mode",
+              "value": "on_demand",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Central Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\"SCHEDULE_CRON\":\"0 7 * * *\",\"SCHEDULE_TIMEZONE\":\"UTC\",\"ALERT_BELOW_GROSS_EUR_PER_KG\":10,\"ESTONIAN_VAT_RATE\":0.24,\"ON_DEMAND_RESULT_LIMIT\":3,\"STATE_RETENTION_DAYS\":90,\"SOURCE_MAX_RETRIES\":3,\"SHOPPING_AREA\":\"Tallinn\",\"ENABLED_RETAILERS\":[\"selver\",\"rimi\",\"barbora\",\"kaupmees\"],\"RETAILERS\":{\"selver\":{\"url\":\"https://www.selver.ee/tooted?query=l%C3%B5hefilee\",\"region\":\"Tallinn e-store\",\"proxy\":\"http://192.168.21.1:3128\"},\"rimi\":{\"url\":\"https://www.rimi.ee/epood/ee/otsing?query=l%C3%B5hefilee\",\"region\":\"Tallinn e-store\"},\"barbora\":{\"url\":\"https://barbora.ee/otsing?q=l%C3%B5hefilee\",\"region\":\"Tallinn (T032)\"},\"kaupmees\":{\"url\":\"https://www.kaupmees.ee/products/?query=l%C3%B5hefilee\",\"region\":\"Tallinn / eKaupmees\"}},\"DELIVERY_SERVER\":\"998481392159686696\",\"DELIVERY_CHANNEL\":\"1485193388012601416\",\"REPAIR_MODE\":\"manual\",\"AUTOMATIC_REPAIR_DISPATCH_ENABLED\":false,\"REPAIR_PAYLOAD_SCHEMA_VERSION\":1}",
+        "options": {}
+      }
+    },
+    {
+      "id": "fetch-selver",
+      "name": "Fetch Selver",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        -300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.RETAILERS.selver.url }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 25000,
+          "proxy": "http://192.168.21.1:3128"
+        }
+      }
+    },
+    {
+      "id": "parse-selver",
+      "name": "Parse Selver",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -130,
+        -300
+      ],
+      "parameters": {
+        "jsCode": "const DEFAULT_CONFIG = Object.freeze({\n  SCHEDULE_CRON: \"0 7 * * *\",\n  SCHEDULE_TIMEZONE: \"UTC\",\n  ALERT_BELOW_GROSS_EUR_PER_KG: 10,\n  ESTONIAN_VAT_RATE: 0.24,\n  ON_DEMAND_RESULT_LIMIT: 3,\n  STATE_RETENTION_DAYS: 90,\n  SOURCE_MAX_RETRIES: 3,\n  SHOPPING_AREA: \"Tallinn\",\n  ENABLED_RETAILERS: [\"selver\", \"rimi\", \"barbora\", \"kaupmees\"],\n  SELVER_PROXY_URL: \"http://192.168.21.1:3128\",\n  REPAIR_MODE: \"manual\",\n  AUTOMATIC_REPAIR_DISPATCH_ENABLED: false,\n  REPAIR_PAYLOAD_SCHEMA_VERSION: 1,\n});\n\nfunction text(value) {\n  return String(value ?? \"\")\n    .replace(/<[^>]*>/g, \" \")\n    .replace(/&nbsp;|&#160;/g, \" \")\n    .replace(/&amp;/g, \"&\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cents(value) {\n  const normalized = String(value).trim().replace(/\\s/g, \"\").replace(\",\", \".\");\n  if (!/^\\d+(?:\\.\\d{1,4})?$/.test(normalized)) throw new Error(`Invalid price: ${value}`);\n  return Math.round(Number(normalized) * 100);\n}\n\nfunction pricePerKgCents(value) {\n  return cents(value);\n}\n\nfunction grossFromNetCents(net, vat = 0.24) {\n  return Math.round(net * (1 + vat));\n}\n\nfunction fingerprint(input) {\n  let hash = 2166136261;\n  for (const c of String(input)) {\n    hash ^= c.charCodeAt(0);\n    hash = Math.imul(hash, 16777619);\n  }\n  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, \"0\")}`;\n}\n\nfunction isSalmonFillet(record) {\n  const value = `${record.product_name || \"\"} ${record.category || \"\"} ${record.description || \"\"} ${record.ingredients || \"\"}`.toLocaleLowerCase(\"et\");\n  if (!/(lõhe\\s*filee|lohe\\s*filee|salmon\\s+fillet)/i.test(value)) return false;\n  if (/(forell|trout|terve\\s+lõhe|whole\\s+salmon|rookimata|gutted|steak|suits|smok|soolat|salted|cured|gravlax|marin|maitsest|season|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;\n  if (record.category && /(lemmikloom|kass|koer|konserv|valmistoit)/i.test(record.category)) return false;\n  return true;\n}\n\nfunction conditionFor(value) {\n  const s = String(value).toLocaleLowerCase(\"et\");\n  if (/külmut|frozen/.test(s)) return \"frozen\";\n  if (/jahut|chilled/.test(s)) return \"chilled\";\n  return \"fresh\";\n}\n\nfunction offering(fields) {\n  const gross = Number(fields.gross_price_per_kg_cents);\n  if (!fields.product_id || !fields.product_name || !Number.isInteger(gross) || gross <= 0) {\n    throw new Error(\"Missing normalized offering fields\");\n  }\n  const priceType = fields.price_type || \"regular\";\n  return {\n    retailer: fields.retailer,\n    store_or_region: fields.store_or_region,\n    product_id: String(fields.product_id),\n    ean: fields.ean || null,\n    product_name: text(fields.product_name),\n    product_url: fields.product_url,\n    condition: fields.condition || conditionFor(`${fields.product_name} ${fields.category || \"\"}`),\n    trim_or_cut: fields.trim_or_cut || null,\n    package_weight_kg: fields.package_weight_kg ?? null,\n    package_gross_price_cents: fields.package_gross_price_cents ?? null,\n    gross_price_per_kg_cents: gross,\n    source_price_per_kg_cents: fields.source_price_per_kg_cents ?? gross,\n    source_price_includes_vat: fields.source_price_includes_vat !== false,\n    price_type: priceType,\n    loyalty_card_required: Boolean(fields.loyalty_card_required),\n    minimum_quantity: fields.minimum_quantity ?? 1,\n    minimum_purchase_total_cents: fields.minimum_purchase_total_cents ?? null,\n    in_stock: fields.in_stock !== false,\n    promotion_valid_from: fields.promotion_valid_from || null,\n    promotion_valid_until: fields.promotion_valid_until || null,\n    fetched_at: fields.fetched_at || new Date().toISOString(),\n    source_offer_identity: `${fields.retailer}|${fields.store_or_region}|${fields.product_id}|${priceType}`,\n  };\n}\n\nfunction health(retailer, html, offerings, errors, extra = {}) {\n  return {\n    status: errors.length ? (offerings.length ? \"partial\" : \"failed\") : \"success\",\n    responseStatus: extra.status ?? 200,\n    responseContentType: extra.contentType || \"text/html\",\n    responseFingerprint: fingerprint(html),\n    productsReceived: extra.productsReceived ?? offerings.length,\n    productsParsed: offerings.length,\n    parseErrors: errors.length,\n    failureCategory: errors.length ? (extra.failureCategory || \"probable_schema_change\") : null,\n    failureSummary: errors.length ? errors[0] : null,\n  };\n}\n\nfunction envelope(retailer, region, html, offerings, errors, extra = {}) {\n  return {\n    source: { retailer, storeOrRegion: region, fetchedAt: new Date().toISOString() },\n    health: health(retailer, html, offerings, errors, extra),\n    offerings,\n  };\n}\n\nfunction parseBarbora(html, config = DEFAULT_CONFIG) {\n  const match = String(html).match(/window\\.b_productList\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!match) return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Expected window.b_productList was not found\"]);\n  let products;\n  try { products = JSON.parse(match[1]); } catch { return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.title, category: p.category_name_full_path })) continue;\n      if (p.status !== \"active\") continue;\n      const unit = p.units?.[0] || {};\n      const perKg = p.comparative_unit === \"kg\" ? p.comparative_unit_price : null;\n      if (!perKg) throw new Error(`Missing unit price for ${p.id}`);\n      results.push(offering({\n        retailer: \"barbora\", store_or_region: `Tallinn (${p.shopcode || \"T032\"})`,\n        product_id: p.id, product_name: p.title, category: p.category_name_full_path,\n        product_url: `https://barbora.ee/toode/${p.Url}`, gross_price_per_kg_cents: cents(perKg),\n        package_gross_price_cents: unit.unit === \"tk\" ? cents(unit.price) : null,\n        package_weight_kg: unit.unit === \"kg\" ? Number(unit.defaultValue || unit.min) : null,\n        price_type: p.promotion?.type === \"LOYALTY_PRICE\" ? \"loyalty\" : p.promotion ? \"promotional\" : \"regular\",\n        loyalty_card_required: p.promotion?.loyaltyCardRequired, minimum_quantity: p.promotion?.minQuantity || 1,\n        promotion_valid_until: p.ShowInOffersTo, in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"barbora\", \"Tallinn (T032)\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseRimi(html) {\n  const cards = String(html).match(/<li class=\"product-grid__item\">[\\s\\S]*?<\\/li>/g);\n  if (!cards) return envelope(\"rimi\", \"Tallinn e-store\", html, [], [\"Expected product grid was not found\"]);\n  const results = [], errors = [];\n  for (const card of cards) {\n    try {\n      const id = card.match(/data-product-code=\"([^\"]+)\"/)?.[1];\n      const name = text(card.match(/class=\"card__name\">([\\s\\S]*?)<\\/p>/)?.[1]);\n      if (!isSalmonFillet({ product_name: name, category: card })) continue;\n      if (!/js-add-to-cart/.test(card)) continue;\n      const unit = card.match(/Hind ühiku kohta:\\s*([\\d,.]+)\\s*€\\/kg/i)?.[1];\n      if (!unit) throw new Error(`Missing €/kg for ${id}`);\n      const href = card.match(/class=\"card__url[^\"]*\" href=\"([^\"]+)\"/)?.[1];\n      const packagePrice = card.match(/data-gtm-eec-product='[^']*\"price\":([\\d.]+)/)?.[1];\n      results.push(offering({\n        retailer: \"rimi\", store_or_region: \"Tallinn e-store\", product_id: id, product_name: name,\n        product_url: `https://www.rimi.ee${href}`, gross_price_per_kg_cents: cents(unit),\n        package_gross_price_cents: packagePrice ? cents(packagePrice) : null,\n        package_weight_kg: Number(name.match(/(\\d+(?:[,.]\\d+)?)\\s*kg\\b/i)?.[1]?.replace(\",\", \".\")) || null,\n        price_type: /old-price-tag/.test(card) ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"rimi\", \"Tallinn e-store\", html, results, errors, { productsReceived: cards.length });\n}\n\nfunction parseKaupmees(html, config = DEFAULT_CONFIG) {\n  const setup = String(html).match(/window\\.setupApp\\s*&&\\s*window\\.setupApp\\((\\{[\\s\\S]*?\\})\\);/);\n  if (!setup) return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Expected setupApp state was not found\"]);\n  const productJson = String(html).match(/(?:window\\.(?:products|productList)|products)\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!productJson) {\n    return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Public page loaded, but expected product collection was not present\"], { failureCategory: \"probable_schema_change\" });\n  }\n  let products;\n  try { products = JSON.parse(productJson[1]); } catch { return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name || p.title, category: p.category })) continue;\n      const sourceCents = cents(p.price_per_kg || p.unit_price);\n      const includesVat = p.price_includes_vat === true;\n      results.push(offering({\n        retailer: \"kaupmees\", store_or_region: \"Tallinn / eKaupmees\", product_id: p.id || p.code,\n        product_name: p.name || p.title, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.kaupmees.ee${p.url}`,\n        gross_price_per_kg_cents: includesVat ? sourceCents : grossFromNetCents(sourceCents, config.ESTONIAN_VAT_RATE),\n        source_price_per_kg_cents: sourceCents, source_price_includes_vat: includesVat,\n        minimum_quantity: p.minimum_quantity || 1, price_type: p.price_type || \"regular\", in_stock: p.in_stock !== false,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseSelver(html) {\n  const records = String(html).match(/\"records\"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*,\\s*\"meta\"/);\n  if (!records) {\n    const category = /js_cloud_search_url|klevu/i.test(html) ? \"probable_schema_change\" : \"access_denied\";\n    return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Expected Klevu result records were not found\"], { failureCategory: category });\n  }\n  let products;\n  try { products = JSON.parse(records[1]); } catch { return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Klevu product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name, category: p.category })) continue;\n      if (String(p.inStock ?? p.in_stock) === \"no\" || p.inStock === false) continue;\n      const unit = p.salePricePerUnit || p.pricePerUnit || p.unitPrice;\n      if (!unit) throw new Error(`Missing €/kg for ${p.id}`);\n      results.push(offering({\n        retailer: \"selver\", store_or_region: \"Tallinn e-store\", product_id: p.id || p.sku,\n        product_name: p.name, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.selver.ee/${p.url}`,\n        gross_price_per_kg_cents: cents(unit), package_gross_price_cents: p.salePrice ? cents(p.salePrice) : null,\n        price_type: p.salePrice ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"selver\", \"Tallinn e-store\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction incidentFor(failed, state, config, executionId = null, now = new Date().toISOString()) {\n  const names = failed.map((s) => s.source.retailer).sort();\n  const signature = fingerprint(failed.map((s) => `${s.source.retailer}:${s.health.failureCategory}:${s.health.failureSummary}`).sort().join(\"|\"));\n  const existing = state.incident?.fingerprint === signature ? state.incident : null;\n  const incidentId = existing?.incidentId || `SALMON-${names.join(\"-\").toUpperCase()}-${now.slice(0, 10).replaceAll(\"-\", \"\")}-${signature.slice(-4).toUpperCase()}`;\n  const executionIds = [...(existing?.executionIds || []), ...(executionId ? [String(executionId)] : [])].slice(-20);\n  const incident = {\n    schemaVersion: config.REPAIR_PAYLOAD_SCHEMA_VERSION, incidentId, fingerprint: signature,\n    workflow: { name: \"Estonian Salmon Price Monitor\", id: state.workflowId || \"pending\", sourceRevision: state.sourceRevision || \"repository-export\", repositoryPath: \"workflows/estonian-salmon-price-monitor\" },\n    repairMode: \"manual\", dispatchStatus: \"not_dispatched\", dispatchAttemptCount: 0, status: \"open\",\n    affectedSources: names, failureCategory: failed[0].health.failureCategory,\n    summary: failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \"),\n    failedNode: \"Retailer adapter\", executionIds, firstFailureAt: existing?.firstFailureAt || now,\n    latestFailureAt: now, lastFullySuccessfulAt: state.lastFullySuccessfulAt || null,\n    consecutiveFailedRuns: state.consecutiveFailedRuns, responseMetadata: failed.map((s) => ({\n      retailer: s.source.retailer, status: s.health.responseStatus, contentType: s.health.responseContentType,\n      fingerprint: s.health.responseFingerprint, productsReceived: s.health.productsReceived, productsParsed: s.health.productsParsed,\n    })),\n    repairResult: null, repairBranch: null, repairCommit: null, repairValidation: null, deploymentApproval: null,\n  };\n  incident.repairHandoff = {\n    schemaVersion: 1, incidentId, workflowId: incident.workflow.id, workflowName: incident.workflow.name,\n    sourceRevision: incident.workflow.sourceRevision, repositoryPath: incident.workflow.repositoryPath,\n    affectedRetailer: names, failureCategory: incident.failureCategory, summary: incident.summary,\n    executionIds, responseFingerprint: signature,\n    allowedRepositoryScope: [\"workflows/estonian-salmon-price-monitor/workflow.json\", \"workflows/estonian-salmon-price-monitor/fixtures/**\", \"workflows/estonian-salmon-price-monitor/*.test.js\"],\n    requestedAction: \"investigate_prepare_and_test_repair\", productionDeploymentAllowed: false,\n  };\n  return incident;\n}\n\nfunction processRun(sources, options = {}) {\n  const config = { ...DEFAULT_CONFIG, ...(options.config || {}) };\n  const mode = options.mode === \"on_demand\" ? \"on_demand\" : \"scheduled\";\n  const state = options.state || {};\n  const valid = sources.filter((s) => s.health.status !== \"failed\");\n  const failed = sources.filter((s) => s.health.status !== \"success\");\n  const matches = valid.flatMap((s) => s.offerings).filter((o) => o.in_stock && isSalmonFillet({ product_name: o.product_name })).sort((a, b) => a.gross_price_per_kg_cents - b.gross_price_per_kg_cents);\n  if (mode === \"on_demand\") return { mode, results: matches.slice(0, config.ON_DEMAND_RESULT_LIMIT), failed, fullySuccessful: failed.length === 0, state };\n\n  state.offers ||= {};\n  state.consecutiveFailedRuns ||= 0;\n  const successfulRetailers = new Set(sources.filter((s) => s.health.status === \"success\").map((s) => s.source.retailer));\n  const current = new Map(matches.map((o) => [o.source_offer_identity, o]));\n  const alerts = [];\n  for (const item of matches) {\n    const qualifying = item.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100;\n    const prior = state.offers[item.source_offer_identity];\n    if (qualifying && !prior?.qualifying) alerts.push(item);\n    state.offers[item.source_offer_identity] = { qualifying, lastSeenAt: Date.now(), retailer: item.retailer };\n  }\n  for (const [identity, prior] of Object.entries(state.offers)) {\n    if (!current.has(identity) && successfulRetailers.has(prior.retailer)) prior.qualifying = false;\n    if (Date.now() - Number(prior.lastSeenAt || 0) > config.STATE_RETENTION_DAYS * 86400000) delete state.offers[identity];\n  }\n  let operationalMessage = null;\n  if (failed.length) {\n    state.consecutiveFailedRuns += 1;\n    state.incident = incidentFor(failed, state, config, options.executionId);\n    if (state.consecutiveFailedRuns >= 3 && !state.warningSent) {\n      state.warningSent = true;\n      operationalMessage = formatWarning(state.incident);\n    }\n  } else {\n    if (state.warningSent) operationalMessage = `**Salmon monitor recovered**\\nAll configured retailer sources completed successfully. Incident ${state.incident?.incidentId || \"\"} is closed.`;\n    if (state.incident) state.incident.status = \"closed\";\n    state.consecutiveFailedRuns = 0;\n    state.warningSent = false;\n    state.lastFullySuccessfulAt = new Date().toISOString();\n  }\n  return { mode, results: alerts, failed, fullySuccessful: failed.length === 0, operationalMessage, state };\n}\n\nfunction euro(c) { return `€${(c / 100).toFixed(2)}`; }\nfunction formatOffering(o, rank, config = DEFAULT_CONFIG) {\n  const lines = [\n    `${rank}. **${o.retailer}** — ${o.product_name}`,\n    `${euro(o.gross_price_per_kg_cents)}/kg incl. VAT · ${o.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100 ? \"below €10 alert threshold\" : \"at/above €10 threshold\"}`,\n    `${o.store_or_region} · ${o.condition} · ${o.price_type}${o.loyalty_card_required ? \" (loyalty card required)\" : \"\"}`,\n  ];\n  if (o.package_gross_price_cents) lines.push(`Package: ${euro(o.package_gross_price_cents)}${o.package_weight_kg ? ` / ${o.package_weight_kg} kg` : \"\"}`);\n  if (o.minimum_quantity > 1) lines.push(`Minimum quantity: ${o.minimum_quantity}`);\n  if (o.promotion_valid_until) lines.push(`Promotion ends: ${o.promotion_valid_until}`);\n  lines.push(o.product_url);\n  return lines.join(\"\\n\");\n}\nfunction formatOnDemand(outcome, config = DEFAULT_CONFIG) {\n  if (!outcome.results.length && !outcome.failed.length) return \"No matching salmon-fillet offerings are currently available.\";\n  if (!outcome.results.length) return `Salmon price check failed: ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \")}`;\n  const header = outcome.failed.length ? `Cheapest available matches from successful sources (partial; failed: ${outcome.failed.map((s) => s.source.retailer).join(\", \")}):` : \"Three cheapest current salmon-fillet offerings:\";\n  return [header, ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatAlert(outcome, config = DEFAULT_CONFIG) {\n  return [\"**Salmon fillet below €10/kg**\", ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatWarning(incident) {\n  return `**Salmon monitor operational warning**\\nIncident: ${incident.incidentId}\\nWorkflow: ${incident.workflow.name} (${incident.workflow.id})\\nAffected: ${incident.affectedSources.join(\", \")}\\nCategory: ${incident.failureCategory}\\n${incident.summary}\\nFailures: ${incident.consecutiveFailedRuns}; executions: ${incident.executionIds.join(\", \") || \"unavailable\"}\\nFirst: ${incident.firstFailureAt}; latest: ${incident.latestFailureAt}; last successful: ${incident.lastFullySuccessfulAt || \"unknown\"}\\nRepository: ${incident.workflow.repositoryPath}\\n\\n@Mihkel investigate and fix n8n salmon incident ${incident.incidentId}. Prepare and test the repair, commit it to the existing repository, but do not deploy it without my approval.`;\n}\nfunction commandMatches(value) { return /^\\s*n8n\\s+salmon\\s*$/i.test(String(value)); }\n\nconst raw = $input.first().json;\nconst body = typeof raw.body === \"string\" ? raw.body : (typeof raw.data === \"string\" ? raw.data : JSON.stringify(raw.body ?? raw.data ?? raw));\nreturn [{ json: parseSelver(body, $items(\"Central Configuration\")[0].json) }];"
+      }
+    },
+    {
+      "id": "fetch-rimi",
+      "name": "Fetch Rimi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        -100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.RETAILERS.rimi.url }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 25000
+        }
+      }
+    },
+    {
+      "id": "parse-rimi",
+      "name": "Parse Rimi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -130,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const DEFAULT_CONFIG = Object.freeze({\n  SCHEDULE_CRON: \"0 7 * * *\",\n  SCHEDULE_TIMEZONE: \"UTC\",\n  ALERT_BELOW_GROSS_EUR_PER_KG: 10,\n  ESTONIAN_VAT_RATE: 0.24,\n  ON_DEMAND_RESULT_LIMIT: 3,\n  STATE_RETENTION_DAYS: 90,\n  SOURCE_MAX_RETRIES: 3,\n  SHOPPING_AREA: \"Tallinn\",\n  ENABLED_RETAILERS: [\"selver\", \"rimi\", \"barbora\", \"kaupmees\"],\n  SELVER_PROXY_URL: \"http://192.168.21.1:3128\",\n  REPAIR_MODE: \"manual\",\n  AUTOMATIC_REPAIR_DISPATCH_ENABLED: false,\n  REPAIR_PAYLOAD_SCHEMA_VERSION: 1,\n});\n\nfunction text(value) {\n  return String(value ?? \"\")\n    .replace(/<[^>]*>/g, \" \")\n    .replace(/&nbsp;|&#160;/g, \" \")\n    .replace(/&amp;/g, \"&\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cents(value) {\n  const normalized = String(value).trim().replace(/\\s/g, \"\").replace(\",\", \".\");\n  if (!/^\\d+(?:\\.\\d{1,4})?$/.test(normalized)) throw new Error(`Invalid price: ${value}`);\n  return Math.round(Number(normalized) * 100);\n}\n\nfunction pricePerKgCents(value) {\n  return cents(value);\n}\n\nfunction grossFromNetCents(net, vat = 0.24) {\n  return Math.round(net * (1 + vat));\n}\n\nfunction fingerprint(input) {\n  let hash = 2166136261;\n  for (const c of String(input)) {\n    hash ^= c.charCodeAt(0);\n    hash = Math.imul(hash, 16777619);\n  }\n  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, \"0\")}`;\n}\n\nfunction isSalmonFillet(record) {\n  const value = `${record.product_name || \"\"} ${record.category || \"\"} ${record.description || \"\"} ${record.ingredients || \"\"}`.toLocaleLowerCase(\"et\");\n  if (!/(lõhe\\s*filee|lohe\\s*filee|salmon\\s+fillet)/i.test(value)) return false;\n  if (/(forell|trout|terve\\s+lõhe|whole\\s+salmon|rookimata|gutted|steak|suits|smok|soolat|salted|cured|gravlax|marin|maitsest|season|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;\n  if (record.category && /(lemmikloom|kass|koer|konserv|valmistoit)/i.test(record.category)) return false;\n  return true;\n}\n\nfunction conditionFor(value) {\n  const s = String(value).toLocaleLowerCase(\"et\");\n  if (/külmut|frozen/.test(s)) return \"frozen\";\n  if (/jahut|chilled/.test(s)) return \"chilled\";\n  return \"fresh\";\n}\n\nfunction offering(fields) {\n  const gross = Number(fields.gross_price_per_kg_cents);\n  if (!fields.product_id || !fields.product_name || !Number.isInteger(gross) || gross <= 0) {\n    throw new Error(\"Missing normalized offering fields\");\n  }\n  const priceType = fields.price_type || \"regular\";\n  return {\n    retailer: fields.retailer,\n    store_or_region: fields.store_or_region,\n    product_id: String(fields.product_id),\n    ean: fields.ean || null,\n    product_name: text(fields.product_name),\n    product_url: fields.product_url,\n    condition: fields.condition || conditionFor(`${fields.product_name} ${fields.category || \"\"}`),\n    trim_or_cut: fields.trim_or_cut || null,\n    package_weight_kg: fields.package_weight_kg ?? null,\n    package_gross_price_cents: fields.package_gross_price_cents ?? null,\n    gross_price_per_kg_cents: gross,\n    source_price_per_kg_cents: fields.source_price_per_kg_cents ?? gross,\n    source_price_includes_vat: fields.source_price_includes_vat !== false,\n    price_type: priceType,\n    loyalty_card_required: Boolean(fields.loyalty_card_required),\n    minimum_quantity: fields.minimum_quantity ?? 1,\n    minimum_purchase_total_cents: fields.minimum_purchase_total_cents ?? null,\n    in_stock: fields.in_stock !== false,\n    promotion_valid_from: fields.promotion_valid_from || null,\n    promotion_valid_until: fields.promotion_valid_until || null,\n    fetched_at: fields.fetched_at || new Date().toISOString(),\n    source_offer_identity: `${fields.retailer}|${fields.store_or_region}|${fields.product_id}|${priceType}`,\n  };\n}\n\nfunction health(retailer, html, offerings, errors, extra = {}) {\n  return {\n    status: errors.length ? (offerings.length ? \"partial\" : \"failed\") : \"success\",\n    responseStatus: extra.status ?? 200,\n    responseContentType: extra.contentType || \"text/html\",\n    responseFingerprint: fingerprint(html),\n    productsReceived: extra.productsReceived ?? offerings.length,\n    productsParsed: offerings.length,\n    parseErrors: errors.length,\n    failureCategory: errors.length ? (extra.failureCategory || \"probable_schema_change\") : null,\n    failureSummary: errors.length ? errors[0] : null,\n  };\n}\n\nfunction envelope(retailer, region, html, offerings, errors, extra = {}) {\n  return {\n    source: { retailer, storeOrRegion: region, fetchedAt: new Date().toISOString() },\n    health: health(retailer, html, offerings, errors, extra),\n    offerings,\n  };\n}\n\nfunction parseBarbora(html, config = DEFAULT_CONFIG) {\n  const match = String(html).match(/window\\.b_productList\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!match) return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Expected window.b_productList was not found\"]);\n  let products;\n  try { products = JSON.parse(match[1]); } catch { return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.title, category: p.category_name_full_path })) continue;\n      if (p.status !== \"active\") continue;\n      const unit = p.units?.[0] || {};\n      const perKg = p.comparative_unit === \"kg\" ? p.comparative_unit_price : null;\n      if (!perKg) throw new Error(`Missing unit price for ${p.id}`);\n      results.push(offering({\n        retailer: \"barbora\", store_or_region: `Tallinn (${p.shopcode || \"T032\"})`,\n        product_id: p.id, product_name: p.title, category: p.category_name_full_path,\n        product_url: `https://barbora.ee/toode/${p.Url}`, gross_price_per_kg_cents: cents(perKg),\n        package_gross_price_cents: unit.unit === \"tk\" ? cents(unit.price) : null,\n        package_weight_kg: unit.unit === \"kg\" ? Number(unit.defaultValue || unit.min) : null,\n        price_type: p.promotion?.type === \"LOYALTY_PRICE\" ? \"loyalty\" : p.promotion ? \"promotional\" : \"regular\",\n        loyalty_card_required: p.promotion?.loyaltyCardRequired, minimum_quantity: p.promotion?.minQuantity || 1,\n        promotion_valid_until: p.ShowInOffersTo, in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"barbora\", \"Tallinn (T032)\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseRimi(html) {\n  const cards = String(html).match(/<li class=\"product-grid__item\">[\\s\\S]*?<\\/li>/g);\n  if (!cards) return envelope(\"rimi\", \"Tallinn e-store\", html, [], [\"Expected product grid was not found\"]);\n  const results = [], errors = [];\n  for (const card of cards) {\n    try {\n      const id = card.match(/data-product-code=\"([^\"]+)\"/)?.[1];\n      const name = text(card.match(/class=\"card__name\">([\\s\\S]*?)<\\/p>/)?.[1]);\n      if (!isSalmonFillet({ product_name: name, category: card })) continue;\n      if (!/js-add-to-cart/.test(card)) continue;\n      const unit = card.match(/Hind ühiku kohta:\\s*([\\d,.]+)\\s*€\\/kg/i)?.[1];\n      if (!unit) throw new Error(`Missing €/kg for ${id}`);\n      const href = card.match(/class=\"card__url[^\"]*\" href=\"([^\"]+)\"/)?.[1];\n      const packagePrice = card.match(/data-gtm-eec-product='[^']*\"price\":([\\d.]+)/)?.[1];\n      results.push(offering({\n        retailer: \"rimi\", store_or_region: \"Tallinn e-store\", product_id: id, product_name: name,\n        product_url: `https://www.rimi.ee${href}`, gross_price_per_kg_cents: cents(unit),\n        package_gross_price_cents: packagePrice ? cents(packagePrice) : null,\n        package_weight_kg: Number(name.match(/(\\d+(?:[,.]\\d+)?)\\s*kg\\b/i)?.[1]?.replace(\",\", \".\")) || null,\n        price_type: /old-price-tag/.test(card) ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"rimi\", \"Tallinn e-store\", html, results, errors, { productsReceived: cards.length });\n}\n\nfunction parseKaupmees(html, config = DEFAULT_CONFIG) {\n  const setup = String(html).match(/window\\.setupApp\\s*&&\\s*window\\.setupApp\\((\\{[\\s\\S]*?\\})\\);/);\n  if (!setup) return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Expected setupApp state was not found\"]);\n  const productJson = String(html).match(/(?:window\\.(?:products|productList)|products)\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!productJson) {\n    return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Public page loaded, but expected product collection was not present\"], { failureCategory: \"probable_schema_change\" });\n  }\n  let products;\n  try { products = JSON.parse(productJson[1]); } catch { return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name || p.title, category: p.category })) continue;\n      const sourceCents = cents(p.price_per_kg || p.unit_price);\n      const includesVat = p.price_includes_vat === true;\n      results.push(offering({\n        retailer: \"kaupmees\", store_or_region: \"Tallinn / eKaupmees\", product_id: p.id || p.code,\n        product_name: p.name || p.title, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.kaupmees.ee${p.url}`,\n        gross_price_per_kg_cents: includesVat ? sourceCents : grossFromNetCents(sourceCents, config.ESTONIAN_VAT_RATE),\n        source_price_per_kg_cents: sourceCents, source_price_includes_vat: includesVat,\n        minimum_quantity: p.minimum_quantity || 1, price_type: p.price_type || \"regular\", in_stock: p.in_stock !== false,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseSelver(html) {\n  const records = String(html).match(/\"records\"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*,\\s*\"meta\"/);\n  if (!records) {\n    const category = /js_cloud_search_url|klevu/i.test(html) ? \"probable_schema_change\" : \"access_denied\";\n    return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Expected Klevu result records were not found\"], { failureCategory: category });\n  }\n  let products;\n  try { products = JSON.parse(records[1]); } catch { return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Klevu product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name, category: p.category })) continue;\n      if (String(p.inStock ?? p.in_stock) === \"no\" || p.inStock === false) continue;\n      const unit = p.salePricePerUnit || p.pricePerUnit || p.unitPrice;\n      if (!unit) throw new Error(`Missing €/kg for ${p.id}`);\n      results.push(offering({\n        retailer: \"selver\", store_or_region: \"Tallinn e-store\", product_id: p.id || p.sku,\n        product_name: p.name, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.selver.ee/${p.url}`,\n        gross_price_per_kg_cents: cents(unit), package_gross_price_cents: p.salePrice ? cents(p.salePrice) : null,\n        price_type: p.salePrice ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"selver\", \"Tallinn e-store\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction incidentFor(failed, state, config, executionId = null, now = new Date().toISOString()) {\n  const names = failed.map((s) => s.source.retailer).sort();\n  const signature = fingerprint(failed.map((s) => `${s.source.retailer}:${s.health.failureCategory}:${s.health.failureSummary}`).sort().join(\"|\"));\n  const existing = state.incident?.fingerprint === signature ? state.incident : null;\n  const incidentId = existing?.incidentId || `SALMON-${names.join(\"-\").toUpperCase()}-${now.slice(0, 10).replaceAll(\"-\", \"\")}-${signature.slice(-4).toUpperCase()}`;\n  const executionIds = [...(existing?.executionIds || []), ...(executionId ? [String(executionId)] : [])].slice(-20);\n  const incident = {\n    schemaVersion: config.REPAIR_PAYLOAD_SCHEMA_VERSION, incidentId, fingerprint: signature,\n    workflow: { name: \"Estonian Salmon Price Monitor\", id: state.workflowId || \"pending\", sourceRevision: state.sourceRevision || \"repository-export\", repositoryPath: \"workflows/estonian-salmon-price-monitor\" },\n    repairMode: \"manual\", dispatchStatus: \"not_dispatched\", dispatchAttemptCount: 0, status: \"open\",\n    affectedSources: names, failureCategory: failed[0].health.failureCategory,\n    summary: failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \"),\n    failedNode: \"Retailer adapter\", executionIds, firstFailureAt: existing?.firstFailureAt || now,\n    latestFailureAt: now, lastFullySuccessfulAt: state.lastFullySuccessfulAt || null,\n    consecutiveFailedRuns: state.consecutiveFailedRuns, responseMetadata: failed.map((s) => ({\n      retailer: s.source.retailer, status: s.health.responseStatus, contentType: s.health.responseContentType,\n      fingerprint: s.health.responseFingerprint, productsReceived: s.health.productsReceived, productsParsed: s.health.productsParsed,\n    })),\n    repairResult: null, repairBranch: null, repairCommit: null, repairValidation: null, deploymentApproval: null,\n  };\n  incident.repairHandoff = {\n    schemaVersion: 1, incidentId, workflowId: incident.workflow.id, workflowName: incident.workflow.name,\n    sourceRevision: incident.workflow.sourceRevision, repositoryPath: incident.workflow.repositoryPath,\n    affectedRetailer: names, failureCategory: incident.failureCategory, summary: incident.summary,\n    executionIds, responseFingerprint: signature,\n    allowedRepositoryScope: [\"workflows/estonian-salmon-price-monitor/workflow.json\", \"workflows/estonian-salmon-price-monitor/fixtures/**\", \"workflows/estonian-salmon-price-monitor/*.test.js\"],\n    requestedAction: \"investigate_prepare_and_test_repair\", productionDeploymentAllowed: false,\n  };\n  return incident;\n}\n\nfunction processRun(sources, options = {}) {\n  const config = { ...DEFAULT_CONFIG, ...(options.config || {}) };\n  const mode = options.mode === \"on_demand\" ? \"on_demand\" : \"scheduled\";\n  const state = options.state || {};\n  const valid = sources.filter((s) => s.health.status !== \"failed\");\n  const failed = sources.filter((s) => s.health.status !== \"success\");\n  const matches = valid.flatMap((s) => s.offerings).filter((o) => o.in_stock && isSalmonFillet({ product_name: o.product_name })).sort((a, b) => a.gross_price_per_kg_cents - b.gross_price_per_kg_cents);\n  if (mode === \"on_demand\") return { mode, results: matches.slice(0, config.ON_DEMAND_RESULT_LIMIT), failed, fullySuccessful: failed.length === 0, state };\n\n  state.offers ||= {};\n  state.consecutiveFailedRuns ||= 0;\n  const successfulRetailers = new Set(sources.filter((s) => s.health.status === \"success\").map((s) => s.source.retailer));\n  const current = new Map(matches.map((o) => [o.source_offer_identity, o]));\n  const alerts = [];\n  for (const item of matches) {\n    const qualifying = item.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100;\n    const prior = state.offers[item.source_offer_identity];\n    if (qualifying && !prior?.qualifying) alerts.push(item);\n    state.offers[item.source_offer_identity] = { qualifying, lastSeenAt: Date.now(), retailer: item.retailer };\n  }\n  for (const [identity, prior] of Object.entries(state.offers)) {\n    if (!current.has(identity) && successfulRetailers.has(prior.retailer)) prior.qualifying = false;\n    if (Date.now() - Number(prior.lastSeenAt || 0) > config.STATE_RETENTION_DAYS * 86400000) delete state.offers[identity];\n  }\n  let operationalMessage = null;\n  if (failed.length) {\n    state.consecutiveFailedRuns += 1;\n    state.incident = incidentFor(failed, state, config, options.executionId);\n    if (state.consecutiveFailedRuns >= 3 && !state.warningSent) {\n      state.warningSent = true;\n      operationalMessage = formatWarning(state.incident);\n    }\n  } else {\n    if (state.warningSent) operationalMessage = `**Salmon monitor recovered**\\nAll configured retailer sources completed successfully. Incident ${state.incident?.incidentId || \"\"} is closed.`;\n    if (state.incident) state.incident.status = \"closed\";\n    state.consecutiveFailedRuns = 0;\n    state.warningSent = false;\n    state.lastFullySuccessfulAt = new Date().toISOString();\n  }\n  return { mode, results: alerts, failed, fullySuccessful: failed.length === 0, operationalMessage, state };\n}\n\nfunction euro(c) { return `€${(c / 100).toFixed(2)}`; }\nfunction formatOffering(o, rank, config = DEFAULT_CONFIG) {\n  const lines = [\n    `${rank}. **${o.retailer}** — ${o.product_name}`,\n    `${euro(o.gross_price_per_kg_cents)}/kg incl. VAT · ${o.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100 ? \"below €10 alert threshold\" : \"at/above €10 threshold\"}`,\n    `${o.store_or_region} · ${o.condition} · ${o.price_type}${o.loyalty_card_required ? \" (loyalty card required)\" : \"\"}`,\n  ];\n  if (o.package_gross_price_cents) lines.push(`Package: ${euro(o.package_gross_price_cents)}${o.package_weight_kg ? ` / ${o.package_weight_kg} kg` : \"\"}`);\n  if (o.minimum_quantity > 1) lines.push(`Minimum quantity: ${o.minimum_quantity}`);\n  if (o.promotion_valid_until) lines.push(`Promotion ends: ${o.promotion_valid_until}`);\n  lines.push(o.product_url);\n  return lines.join(\"\\n\");\n}\nfunction formatOnDemand(outcome, config = DEFAULT_CONFIG) {\n  if (!outcome.results.length && !outcome.failed.length) return \"No matching salmon-fillet offerings are currently available.\";\n  if (!outcome.results.length) return `Salmon price check failed: ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \")}`;\n  const header = outcome.failed.length ? `Cheapest available matches from successful sources (partial; failed: ${outcome.failed.map((s) => s.source.retailer).join(\", \")}):` : \"Three cheapest current salmon-fillet offerings:\";\n  return [header, ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatAlert(outcome, config = DEFAULT_CONFIG) {\n  return [\"**Salmon fillet below €10/kg**\", ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatWarning(incident) {\n  return `**Salmon monitor operational warning**\\nIncident: ${incident.incidentId}\\nWorkflow: ${incident.workflow.name} (${incident.workflow.id})\\nAffected: ${incident.affectedSources.join(\", \")}\\nCategory: ${incident.failureCategory}\\n${incident.summary}\\nFailures: ${incident.consecutiveFailedRuns}; executions: ${incident.executionIds.join(\", \") || \"unavailable\"}\\nFirst: ${incident.firstFailureAt}; latest: ${incident.latestFailureAt}; last successful: ${incident.lastFullySuccessfulAt || \"unknown\"}\\nRepository: ${incident.workflow.repositoryPath}\\n\\n@Mihkel investigate and fix n8n salmon incident ${incident.incidentId}. Prepare and test the repair, commit it to the existing repository, but do not deploy it without my approval.`;\n}\nfunction commandMatches(value) { return /^\\s*n8n\\s+salmon\\s*$/i.test(String(value)); }\n\nconst raw = $input.first().json;\nconst body = typeof raw.body === \"string\" ? raw.body : (typeof raw.data === \"string\" ? raw.data : JSON.stringify(raw.body ?? raw.data ?? raw));\nreturn [{ json: parseRimi(body, $items(\"Central Configuration\")[0].json) }];"
+      }
+    },
+    {
+      "id": "fetch-barbora",
+      "name": "Fetch Barbora",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.RETAILERS.barbora.url }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 25000
+        }
+      }
+    },
+    {
+      "id": "parse-barbora",
+      "name": "Parse Barbora",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -130,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const DEFAULT_CONFIG = Object.freeze({\n  SCHEDULE_CRON: \"0 7 * * *\",\n  SCHEDULE_TIMEZONE: \"UTC\",\n  ALERT_BELOW_GROSS_EUR_PER_KG: 10,\n  ESTONIAN_VAT_RATE: 0.24,\n  ON_DEMAND_RESULT_LIMIT: 3,\n  STATE_RETENTION_DAYS: 90,\n  SOURCE_MAX_RETRIES: 3,\n  SHOPPING_AREA: \"Tallinn\",\n  ENABLED_RETAILERS: [\"selver\", \"rimi\", \"barbora\", \"kaupmees\"],\n  SELVER_PROXY_URL: \"http://192.168.21.1:3128\",\n  REPAIR_MODE: \"manual\",\n  AUTOMATIC_REPAIR_DISPATCH_ENABLED: false,\n  REPAIR_PAYLOAD_SCHEMA_VERSION: 1,\n});\n\nfunction text(value) {\n  return String(value ?? \"\")\n    .replace(/<[^>]*>/g, \" \")\n    .replace(/&nbsp;|&#160;/g, \" \")\n    .replace(/&amp;/g, \"&\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cents(value) {\n  const normalized = String(value).trim().replace(/\\s/g, \"\").replace(\",\", \".\");\n  if (!/^\\d+(?:\\.\\d{1,4})?$/.test(normalized)) throw new Error(`Invalid price: ${value}`);\n  return Math.round(Number(normalized) * 100);\n}\n\nfunction pricePerKgCents(value) {\n  return cents(value);\n}\n\nfunction grossFromNetCents(net, vat = 0.24) {\n  return Math.round(net * (1 + vat));\n}\n\nfunction fingerprint(input) {\n  let hash = 2166136261;\n  for (const c of String(input)) {\n    hash ^= c.charCodeAt(0);\n    hash = Math.imul(hash, 16777619);\n  }\n  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, \"0\")}`;\n}\n\nfunction isSalmonFillet(record) {\n  const value = `${record.product_name || \"\"} ${record.category || \"\"} ${record.description || \"\"} ${record.ingredients || \"\"}`.toLocaleLowerCase(\"et\");\n  if (!/(lõhe\\s*filee|lohe\\s*filee|salmon\\s+fillet)/i.test(value)) return false;\n  if (/(forell|trout|terve\\s+lõhe|whole\\s+salmon|rookimata|gutted|steak|suits|smok|soolat|salted|cured|gravlax|marin|maitsest|season|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;\n  if (record.category && /(lemmikloom|kass|koer|konserv|valmistoit)/i.test(record.category)) return false;\n  return true;\n}\n\nfunction conditionFor(value) {\n  const s = String(value).toLocaleLowerCase(\"et\");\n  if (/külmut|frozen/.test(s)) return \"frozen\";\n  if (/jahut|chilled/.test(s)) return \"chilled\";\n  return \"fresh\";\n}\n\nfunction offering(fields) {\n  const gross = Number(fields.gross_price_per_kg_cents);\n  if (!fields.product_id || !fields.product_name || !Number.isInteger(gross) || gross <= 0) {\n    throw new Error(\"Missing normalized offering fields\");\n  }\n  const priceType = fields.price_type || \"regular\";\n  return {\n    retailer: fields.retailer,\n    store_or_region: fields.store_or_region,\n    product_id: String(fields.product_id),\n    ean: fields.ean || null,\n    product_name: text(fields.product_name),\n    product_url: fields.product_url,\n    condition: fields.condition || conditionFor(`${fields.product_name} ${fields.category || \"\"}`),\n    trim_or_cut: fields.trim_or_cut || null,\n    package_weight_kg: fields.package_weight_kg ?? null,\n    package_gross_price_cents: fields.package_gross_price_cents ?? null,\n    gross_price_per_kg_cents: gross,\n    source_price_per_kg_cents: fields.source_price_per_kg_cents ?? gross,\n    source_price_includes_vat: fields.source_price_includes_vat !== false,\n    price_type: priceType,\n    loyalty_card_required: Boolean(fields.loyalty_card_required),\n    minimum_quantity: fields.minimum_quantity ?? 1,\n    minimum_purchase_total_cents: fields.minimum_purchase_total_cents ?? null,\n    in_stock: fields.in_stock !== false,\n    promotion_valid_from: fields.promotion_valid_from || null,\n    promotion_valid_until: fields.promotion_valid_until || null,\n    fetched_at: fields.fetched_at || new Date().toISOString(),\n    source_offer_identity: `${fields.retailer}|${fields.store_or_region}|${fields.product_id}|${priceType}`,\n  };\n}\n\nfunction health(retailer, html, offerings, errors, extra = {}) {\n  return {\n    status: errors.length ? (offerings.length ? \"partial\" : \"failed\") : \"success\",\n    responseStatus: extra.status ?? 200,\n    responseContentType: extra.contentType || \"text/html\",\n    responseFingerprint: fingerprint(html),\n    productsReceived: extra.productsReceived ?? offerings.length,\n    productsParsed: offerings.length,\n    parseErrors: errors.length,\n    failureCategory: errors.length ? (extra.failureCategory || \"probable_schema_change\") : null,\n    failureSummary: errors.length ? errors[0] : null,\n  };\n}\n\nfunction envelope(retailer, region, html, offerings, errors, extra = {}) {\n  return {\n    source: { retailer, storeOrRegion: region, fetchedAt: new Date().toISOString() },\n    health: health(retailer, html, offerings, errors, extra),\n    offerings,\n  };\n}\n\nfunction parseBarbora(html, config = DEFAULT_CONFIG) {\n  const match = String(html).match(/window\\.b_productList\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!match) return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Expected window.b_productList was not found\"]);\n  let products;\n  try { products = JSON.parse(match[1]); } catch { return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.title, category: p.category_name_full_path })) continue;\n      if (p.status !== \"active\") continue;\n      const unit = p.units?.[0] || {};\n      const perKg = p.comparative_unit === \"kg\" ? p.comparative_unit_price : null;\n      if (!perKg) throw new Error(`Missing unit price for ${p.id}`);\n      results.push(offering({\n        retailer: \"barbora\", store_or_region: `Tallinn (${p.shopcode || \"T032\"})`,\n        product_id: p.id, product_name: p.title, category: p.category_name_full_path,\n        product_url: `https://barbora.ee/toode/${p.Url}`, gross_price_per_kg_cents: cents(perKg),\n        package_gross_price_cents: unit.unit === \"tk\" ? cents(unit.price) : null,\n        package_weight_kg: unit.unit === \"kg\" ? Number(unit.defaultValue || unit.min) : null,\n        price_type: p.promotion?.type === \"LOYALTY_PRICE\" ? \"loyalty\" : p.promotion ? \"promotional\" : \"regular\",\n        loyalty_card_required: p.promotion?.loyaltyCardRequired, minimum_quantity: p.promotion?.minQuantity || 1,\n        promotion_valid_until: p.ShowInOffersTo, in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"barbora\", \"Tallinn (T032)\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseRimi(html) {\n  const cards = String(html).match(/<li class=\"product-grid__item\">[\\s\\S]*?<\\/li>/g);\n  if (!cards) return envelope(\"rimi\", \"Tallinn e-store\", html, [], [\"Expected product grid was not found\"]);\n  const results = [], errors = [];\n  for (const card of cards) {\n    try {\n      const id = card.match(/data-product-code=\"([^\"]+)\"/)?.[1];\n      const name = text(card.match(/class=\"card__name\">([\\s\\S]*?)<\\/p>/)?.[1]);\n      if (!isSalmonFillet({ product_name: name, category: card })) continue;\n      if (!/js-add-to-cart/.test(card)) continue;\n      const unit = card.match(/Hind ühiku kohta:\\s*([\\d,.]+)\\s*€\\/kg/i)?.[1];\n      if (!unit) throw new Error(`Missing €/kg for ${id}`);\n      const href = card.match(/class=\"card__url[^\"]*\" href=\"([^\"]+)\"/)?.[1];\n      const packagePrice = card.match(/data-gtm-eec-product='[^']*\"price\":([\\d.]+)/)?.[1];\n      results.push(offering({\n        retailer: \"rimi\", store_or_region: \"Tallinn e-store\", product_id: id, product_name: name,\n        product_url: `https://www.rimi.ee${href}`, gross_price_per_kg_cents: cents(unit),\n        package_gross_price_cents: packagePrice ? cents(packagePrice) : null,\n        package_weight_kg: Number(name.match(/(\\d+(?:[,.]\\d+)?)\\s*kg\\b/i)?.[1]?.replace(\",\", \".\")) || null,\n        price_type: /old-price-tag/.test(card) ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"rimi\", \"Tallinn e-store\", html, results, errors, { productsReceived: cards.length });\n}\n\nfunction parseKaupmees(html, config = DEFAULT_CONFIG) {\n  const setup = String(html).match(/window\\.setupApp\\s*&&\\s*window\\.setupApp\\((\\{[\\s\\S]*?\\})\\);/);\n  if (!setup) return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Expected setupApp state was not found\"]);\n  const productJson = String(html).match(/(?:window\\.(?:products|productList)|products)\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!productJson) {\n    return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Public page loaded, but expected product collection was not present\"], { failureCategory: \"probable_schema_change\" });\n  }\n  let products;\n  try { products = JSON.parse(productJson[1]); } catch { return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name || p.title, category: p.category })) continue;\n      const sourceCents = cents(p.price_per_kg || p.unit_price);\n      const includesVat = p.price_includes_vat === true;\n      results.push(offering({\n        retailer: \"kaupmees\", store_or_region: \"Tallinn / eKaupmees\", product_id: p.id || p.code,\n        product_name: p.name || p.title, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.kaupmees.ee${p.url}`,\n        gross_price_per_kg_cents: includesVat ? sourceCents : grossFromNetCents(sourceCents, config.ESTONIAN_VAT_RATE),\n        source_price_per_kg_cents: sourceCents, source_price_includes_vat: includesVat,\n        minimum_quantity: p.minimum_quantity || 1, price_type: p.price_type || \"regular\", in_stock: p.in_stock !== false,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseSelver(html) {\n  const records = String(html).match(/\"records\"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*,\\s*\"meta\"/);\n  if (!records) {\n    const category = /js_cloud_search_url|klevu/i.test(html) ? \"probable_schema_change\" : \"access_denied\";\n    return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Expected Klevu result records were not found\"], { failureCategory: category });\n  }\n  let products;\n  try { products = JSON.parse(records[1]); } catch { return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Klevu product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name, category: p.category })) continue;\n      if (String(p.inStock ?? p.in_stock) === \"no\" || p.inStock === false) continue;\n      const unit = p.salePricePerUnit || p.pricePerUnit || p.unitPrice;\n      if (!unit) throw new Error(`Missing €/kg for ${p.id}`);\n      results.push(offering({\n        retailer: \"selver\", store_or_region: \"Tallinn e-store\", product_id: p.id || p.sku,\n        product_name: p.name, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.selver.ee/${p.url}`,\n        gross_price_per_kg_cents: cents(unit), package_gross_price_cents: p.salePrice ? cents(p.salePrice) : null,\n        price_type: p.salePrice ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"selver\", \"Tallinn e-store\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction incidentFor(failed, state, config, executionId = null, now = new Date().toISOString()) {\n  const names = failed.map((s) => s.source.retailer).sort();\n  const signature = fingerprint(failed.map((s) => `${s.source.retailer}:${s.health.failureCategory}:${s.health.failureSummary}`).sort().join(\"|\"));\n  const existing = state.incident?.fingerprint === signature ? state.incident : null;\n  const incidentId = existing?.incidentId || `SALMON-${names.join(\"-\").toUpperCase()}-${now.slice(0, 10).replaceAll(\"-\", \"\")}-${signature.slice(-4).toUpperCase()}`;\n  const executionIds = [...(existing?.executionIds || []), ...(executionId ? [String(executionId)] : [])].slice(-20);\n  const incident = {\n    schemaVersion: config.REPAIR_PAYLOAD_SCHEMA_VERSION, incidentId, fingerprint: signature,\n    workflow: { name: \"Estonian Salmon Price Monitor\", id: state.workflowId || \"pending\", sourceRevision: state.sourceRevision || \"repository-export\", repositoryPath: \"workflows/estonian-salmon-price-monitor\" },\n    repairMode: \"manual\", dispatchStatus: \"not_dispatched\", dispatchAttemptCount: 0, status: \"open\",\n    affectedSources: names, failureCategory: failed[0].health.failureCategory,\n    summary: failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \"),\n    failedNode: \"Retailer adapter\", executionIds, firstFailureAt: existing?.firstFailureAt || now,\n    latestFailureAt: now, lastFullySuccessfulAt: state.lastFullySuccessfulAt || null,\n    consecutiveFailedRuns: state.consecutiveFailedRuns, responseMetadata: failed.map((s) => ({\n      retailer: s.source.retailer, status: s.health.responseStatus, contentType: s.health.responseContentType,\n      fingerprint: s.health.responseFingerprint, productsReceived: s.health.productsReceived, productsParsed: s.health.productsParsed,\n    })),\n    repairResult: null, repairBranch: null, repairCommit: null, repairValidation: null, deploymentApproval: null,\n  };\n  incident.repairHandoff = {\n    schemaVersion: 1, incidentId, workflowId: incident.workflow.id, workflowName: incident.workflow.name,\n    sourceRevision: incident.workflow.sourceRevision, repositoryPath: incident.workflow.repositoryPath,\n    affectedRetailer: names, failureCategory: incident.failureCategory, summary: incident.summary,\n    executionIds, responseFingerprint: signature,\n    allowedRepositoryScope: [\"workflows/estonian-salmon-price-monitor/workflow.json\", \"workflows/estonian-salmon-price-monitor/fixtures/**\", \"workflows/estonian-salmon-price-monitor/*.test.js\"],\n    requestedAction: \"investigate_prepare_and_test_repair\", productionDeploymentAllowed: false,\n  };\n  return incident;\n}\n\nfunction processRun(sources, options = {}) {\n  const config = { ...DEFAULT_CONFIG, ...(options.config || {}) };\n  const mode = options.mode === \"on_demand\" ? \"on_demand\" : \"scheduled\";\n  const state = options.state || {};\n  const valid = sources.filter((s) => s.health.status !== \"failed\");\n  const failed = sources.filter((s) => s.health.status !== \"success\");\n  const matches = valid.flatMap((s) => s.offerings).filter((o) => o.in_stock && isSalmonFillet({ product_name: o.product_name })).sort((a, b) => a.gross_price_per_kg_cents - b.gross_price_per_kg_cents);\n  if (mode === \"on_demand\") return { mode, results: matches.slice(0, config.ON_DEMAND_RESULT_LIMIT), failed, fullySuccessful: failed.length === 0, state };\n\n  state.offers ||= {};\n  state.consecutiveFailedRuns ||= 0;\n  const successfulRetailers = new Set(sources.filter((s) => s.health.status === \"success\").map((s) => s.source.retailer));\n  const current = new Map(matches.map((o) => [o.source_offer_identity, o]));\n  const alerts = [];\n  for (const item of matches) {\n    const qualifying = item.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100;\n    const prior = state.offers[item.source_offer_identity];\n    if (qualifying && !prior?.qualifying) alerts.push(item);\n    state.offers[item.source_offer_identity] = { qualifying, lastSeenAt: Date.now(), retailer: item.retailer };\n  }\n  for (const [identity, prior] of Object.entries(state.offers)) {\n    if (!current.has(identity) && successfulRetailers.has(prior.retailer)) prior.qualifying = false;\n    if (Date.now() - Number(prior.lastSeenAt || 0) > config.STATE_RETENTION_DAYS * 86400000) delete state.offers[identity];\n  }\n  let operationalMessage = null;\n  if (failed.length) {\n    state.consecutiveFailedRuns += 1;\n    state.incident = incidentFor(failed, state, config, options.executionId);\n    if (state.consecutiveFailedRuns >= 3 && !state.warningSent) {\n      state.warningSent = true;\n      operationalMessage = formatWarning(state.incident);\n    }\n  } else {\n    if (state.warningSent) operationalMessage = `**Salmon monitor recovered**\\nAll configured retailer sources completed successfully. Incident ${state.incident?.incidentId || \"\"} is closed.`;\n    if (state.incident) state.incident.status = \"closed\";\n    state.consecutiveFailedRuns = 0;\n    state.warningSent = false;\n    state.lastFullySuccessfulAt = new Date().toISOString();\n  }\n  return { mode, results: alerts, failed, fullySuccessful: failed.length === 0, operationalMessage, state };\n}\n\nfunction euro(c) { return `€${(c / 100).toFixed(2)}`; }\nfunction formatOffering(o, rank, config = DEFAULT_CONFIG) {\n  const lines = [\n    `${rank}. **${o.retailer}** — ${o.product_name}`,\n    `${euro(o.gross_price_per_kg_cents)}/kg incl. VAT · ${o.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100 ? \"below €10 alert threshold\" : \"at/above €10 threshold\"}`,\n    `${o.store_or_region} · ${o.condition} · ${o.price_type}${o.loyalty_card_required ? \" (loyalty card required)\" : \"\"}`,\n  ];\n  if (o.package_gross_price_cents) lines.push(`Package: ${euro(o.package_gross_price_cents)}${o.package_weight_kg ? ` / ${o.package_weight_kg} kg` : \"\"}`);\n  if (o.minimum_quantity > 1) lines.push(`Minimum quantity: ${o.minimum_quantity}`);\n  if (o.promotion_valid_until) lines.push(`Promotion ends: ${o.promotion_valid_until}`);\n  lines.push(o.product_url);\n  return lines.join(\"\\n\");\n}\nfunction formatOnDemand(outcome, config = DEFAULT_CONFIG) {\n  if (!outcome.results.length && !outcome.failed.length) return \"No matching salmon-fillet offerings are currently available.\";\n  if (!outcome.results.length) return `Salmon price check failed: ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \")}`;\n  const header = outcome.failed.length ? `Cheapest available matches from successful sources (partial; failed: ${outcome.failed.map((s) => s.source.retailer).join(\", \")}):` : \"Three cheapest current salmon-fillet offerings:\";\n  return [header, ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatAlert(outcome, config = DEFAULT_CONFIG) {\n  return [\"**Salmon fillet below €10/kg**\", ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatWarning(incident) {\n  return `**Salmon monitor operational warning**\\nIncident: ${incident.incidentId}\\nWorkflow: ${incident.workflow.name} (${incident.workflow.id})\\nAffected: ${incident.affectedSources.join(\", \")}\\nCategory: ${incident.failureCategory}\\n${incident.summary}\\nFailures: ${incident.consecutiveFailedRuns}; executions: ${incident.executionIds.join(\", \") || \"unavailable\"}\\nFirst: ${incident.firstFailureAt}; latest: ${incident.latestFailureAt}; last successful: ${incident.lastFullySuccessfulAt || \"unknown\"}\\nRepository: ${incident.workflow.repositoryPath}\\n\\n@Mihkel investigate and fix n8n salmon incident ${incident.incidentId}. Prepare and test the repair, commit it to the existing repository, but do not deploy it without my approval.`;\n}\nfunction commandMatches(value) { return /^\\s*n8n\\s+salmon\\s*$/i.test(String(value)); }\n\nconst raw = $input.first().json;\nconst body = typeof raw.body === \"string\" ? raw.body : (typeof raw.data === \"string\" ? raw.data : JSON.stringify(raw.body ?? raw.data ?? raw));\nreturn [{ json: parseBarbora(body, $items(\"Central Configuration\")[0].json) }];"
+      }
+    },
+    {
+      "id": "fetch-kaupmees",
+      "name": "Fetch Kaupmees",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.RETAILERS.kaupmees.url }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 25000
+        }
+      }
+    },
+    {
+      "id": "parse-kaupmees",
+      "name": "Parse Kaupmees",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -130,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const DEFAULT_CONFIG = Object.freeze({\n  SCHEDULE_CRON: \"0 7 * * *\",\n  SCHEDULE_TIMEZONE: \"UTC\",\n  ALERT_BELOW_GROSS_EUR_PER_KG: 10,\n  ESTONIAN_VAT_RATE: 0.24,\n  ON_DEMAND_RESULT_LIMIT: 3,\n  STATE_RETENTION_DAYS: 90,\n  SOURCE_MAX_RETRIES: 3,\n  SHOPPING_AREA: \"Tallinn\",\n  ENABLED_RETAILERS: [\"selver\", \"rimi\", \"barbora\", \"kaupmees\"],\n  SELVER_PROXY_URL: \"http://192.168.21.1:3128\",\n  REPAIR_MODE: \"manual\",\n  AUTOMATIC_REPAIR_DISPATCH_ENABLED: false,\n  REPAIR_PAYLOAD_SCHEMA_VERSION: 1,\n});\n\nfunction text(value) {\n  return String(value ?? \"\")\n    .replace(/<[^>]*>/g, \" \")\n    .replace(/&nbsp;|&#160;/g, \" \")\n    .replace(/&amp;/g, \"&\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cents(value) {\n  const normalized = String(value).trim().replace(/\\s/g, \"\").replace(\",\", \".\");\n  if (!/^\\d+(?:\\.\\d{1,4})?$/.test(normalized)) throw new Error(`Invalid price: ${value}`);\n  return Math.round(Number(normalized) * 100);\n}\n\nfunction pricePerKgCents(value) {\n  return cents(value);\n}\n\nfunction grossFromNetCents(net, vat = 0.24) {\n  return Math.round(net * (1 + vat));\n}\n\nfunction fingerprint(input) {\n  let hash = 2166136261;\n  for (const c of String(input)) {\n    hash ^= c.charCodeAt(0);\n    hash = Math.imul(hash, 16777619);\n  }\n  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, \"0\")}`;\n}\n\nfunction isSalmonFillet(record) {\n  const value = `${record.product_name || \"\"} ${record.category || \"\"} ${record.description || \"\"} ${record.ingredients || \"\"}`.toLocaleLowerCase(\"et\");\n  if (!/(lõhe\\s*filee|lohe\\s*filee|salmon\\s+fillet)/i.test(value)) return false;\n  if (/(forell|trout|terve\\s+lõhe|whole\\s+salmon|rookimata|gutted|steak|suits|smok|soolat|salted|cured|gravlax|marin|maitsest|season|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;\n  if (record.category && /(lemmikloom|kass|koer|konserv|valmistoit)/i.test(record.category)) return false;\n  return true;\n}\n\nfunction conditionFor(value) {\n  const s = String(value).toLocaleLowerCase(\"et\");\n  if (/külmut|frozen/.test(s)) return \"frozen\";\n  if (/jahut|chilled/.test(s)) return \"chilled\";\n  return \"fresh\";\n}\n\nfunction offering(fields) {\n  const gross = Number(fields.gross_price_per_kg_cents);\n  if (!fields.product_id || !fields.product_name || !Number.isInteger(gross) || gross <= 0) {\n    throw new Error(\"Missing normalized offering fields\");\n  }\n  const priceType = fields.price_type || \"regular\";\n  return {\n    retailer: fields.retailer,\n    store_or_region: fields.store_or_region,\n    product_id: String(fields.product_id),\n    ean: fields.ean || null,\n    product_name: text(fields.product_name),\n    product_url: fields.product_url,\n    condition: fields.condition || conditionFor(`${fields.product_name} ${fields.category || \"\"}`),\n    trim_or_cut: fields.trim_or_cut || null,\n    package_weight_kg: fields.package_weight_kg ?? null,\n    package_gross_price_cents: fields.package_gross_price_cents ?? null,\n    gross_price_per_kg_cents: gross,\n    source_price_per_kg_cents: fields.source_price_per_kg_cents ?? gross,\n    source_price_includes_vat: fields.source_price_includes_vat !== false,\n    price_type: priceType,\n    loyalty_card_required: Boolean(fields.loyalty_card_required),\n    minimum_quantity: fields.minimum_quantity ?? 1,\n    minimum_purchase_total_cents: fields.minimum_purchase_total_cents ?? null,\n    in_stock: fields.in_stock !== false,\n    promotion_valid_from: fields.promotion_valid_from || null,\n    promotion_valid_until: fields.promotion_valid_until || null,\n    fetched_at: fields.fetched_at || new Date().toISOString(),\n    source_offer_identity: `${fields.retailer}|${fields.store_or_region}|${fields.product_id}|${priceType}`,\n  };\n}\n\nfunction health(retailer, html, offerings, errors, extra = {}) {\n  return {\n    status: errors.length ? (offerings.length ? \"partial\" : \"failed\") : \"success\",\n    responseStatus: extra.status ?? 200,\n    responseContentType: extra.contentType || \"text/html\",\n    responseFingerprint: fingerprint(html),\n    productsReceived: extra.productsReceived ?? offerings.length,\n    productsParsed: offerings.length,\n    parseErrors: errors.length,\n    failureCategory: errors.length ? (extra.failureCategory || \"probable_schema_change\") : null,\n    failureSummary: errors.length ? errors[0] : null,\n  };\n}\n\nfunction envelope(retailer, region, html, offerings, errors, extra = {}) {\n  return {\n    source: { retailer, storeOrRegion: region, fetchedAt: new Date().toISOString() },\n    health: health(retailer, html, offerings, errors, extra),\n    offerings,\n  };\n}\n\nfunction parseBarbora(html, config = DEFAULT_CONFIG) {\n  const match = String(html).match(/window\\.b_productList\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!match) return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Expected window.b_productList was not found\"]);\n  let products;\n  try { products = JSON.parse(match[1]); } catch { return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.title, category: p.category_name_full_path })) continue;\n      if (p.status !== \"active\") continue;\n      const unit = p.units?.[0] || {};\n      const perKg = p.comparative_unit === \"kg\" ? p.comparative_unit_price : null;\n      if (!perKg) throw new Error(`Missing unit price for ${p.id}`);\n      results.push(offering({\n        retailer: \"barbora\", store_or_region: `Tallinn (${p.shopcode || \"T032\"})`,\n        product_id: p.id, product_name: p.title, category: p.category_name_full_path,\n        product_url: `https://barbora.ee/toode/${p.Url}`, gross_price_per_kg_cents: cents(perKg),\n        package_gross_price_cents: unit.unit === \"tk\" ? cents(unit.price) : null,\n        package_weight_kg: unit.unit === \"kg\" ? Number(unit.defaultValue || unit.min) : null,\n        price_type: p.promotion?.type === \"LOYALTY_PRICE\" ? \"loyalty\" : p.promotion ? \"promotional\" : \"regular\",\n        loyalty_card_required: p.promotion?.loyaltyCardRequired, minimum_quantity: p.promotion?.minQuantity || 1,\n        promotion_valid_until: p.ShowInOffersTo, in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"barbora\", \"Tallinn (T032)\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseRimi(html) {\n  const cards = String(html).match(/<li class=\"product-grid__item\">[\\s\\S]*?<\\/li>/g);\n  if (!cards) return envelope(\"rimi\", \"Tallinn e-store\", html, [], [\"Expected product grid was not found\"]);\n  const results = [], errors = [];\n  for (const card of cards) {\n    try {\n      const id = card.match(/data-product-code=\"([^\"]+)\"/)?.[1];\n      const name = text(card.match(/class=\"card__name\">([\\s\\S]*?)<\\/p>/)?.[1]);\n      if (!isSalmonFillet({ product_name: name, category: card })) continue;\n      if (!/js-add-to-cart/.test(card)) continue;\n      const unit = card.match(/Hind ühiku kohta:\\s*([\\d,.]+)\\s*€\\/kg/i)?.[1];\n      if (!unit) throw new Error(`Missing €/kg for ${id}`);\n      const href = card.match(/class=\"card__url[^\"]*\" href=\"([^\"]+)\"/)?.[1];\n      const packagePrice = card.match(/data-gtm-eec-product='[^']*\"price\":([\\d.]+)/)?.[1];\n      results.push(offering({\n        retailer: \"rimi\", store_or_region: \"Tallinn e-store\", product_id: id, product_name: name,\n        product_url: `https://www.rimi.ee${href}`, gross_price_per_kg_cents: cents(unit),\n        package_gross_price_cents: packagePrice ? cents(packagePrice) : null,\n        package_weight_kg: Number(name.match(/(\\d+(?:[,.]\\d+)?)\\s*kg\\b/i)?.[1]?.replace(\",\", \".\")) || null,\n        price_type: /old-price-tag/.test(card) ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"rimi\", \"Tallinn e-store\", html, results, errors, { productsReceived: cards.length });\n}\n\nfunction parseKaupmees(html, config = DEFAULT_CONFIG) {\n  const setup = String(html).match(/window\\.setupApp\\s*&&\\s*window\\.setupApp\\((\\{[\\s\\S]*?\\})\\);/);\n  if (!setup) return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Expected setupApp state was not found\"]);\n  const productJson = String(html).match(/(?:window\\.(?:products|productList)|products)\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!productJson) {\n    return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Public page loaded, but expected product collection was not present\"], { failureCategory: \"probable_schema_change\" });\n  }\n  let products;\n  try { products = JSON.parse(productJson[1]); } catch { return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name || p.title, category: p.category })) continue;\n      const sourceCents = cents(p.price_per_kg || p.unit_price);\n      const includesVat = p.price_includes_vat === true;\n      results.push(offering({\n        retailer: \"kaupmees\", store_or_region: \"Tallinn / eKaupmees\", product_id: p.id || p.code,\n        product_name: p.name || p.title, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.kaupmees.ee${p.url}`,\n        gross_price_per_kg_cents: includesVat ? sourceCents : grossFromNetCents(sourceCents, config.ESTONIAN_VAT_RATE),\n        source_price_per_kg_cents: sourceCents, source_price_includes_vat: includesVat,\n        minimum_quantity: p.minimum_quantity || 1, price_type: p.price_type || \"regular\", in_stock: p.in_stock !== false,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseSelver(html) {\n  const records = String(html).match(/\"records\"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*,\\s*\"meta\"/);\n  if (!records) {\n    const category = /js_cloud_search_url|klevu/i.test(html) ? \"probable_schema_change\" : \"access_denied\";\n    return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Expected Klevu result records were not found\"], { failureCategory: category });\n  }\n  let products;\n  try { products = JSON.parse(records[1]); } catch { return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Klevu product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name, category: p.category })) continue;\n      if (String(p.inStock ?? p.in_stock) === \"no\" || p.inStock === false) continue;\n      const unit = p.salePricePerUnit || p.pricePerUnit || p.unitPrice;\n      if (!unit) throw new Error(`Missing €/kg for ${p.id}`);\n      results.push(offering({\n        retailer: \"selver\", store_or_region: \"Tallinn e-store\", product_id: p.id || p.sku,\n        product_name: p.name, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.selver.ee/${p.url}`,\n        gross_price_per_kg_cents: cents(unit), package_gross_price_cents: p.salePrice ? cents(p.salePrice) : null,\n        price_type: p.salePrice ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"selver\", \"Tallinn e-store\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction incidentFor(failed, state, config, executionId = null, now = new Date().toISOString()) {\n  const names = failed.map((s) => s.source.retailer).sort();\n  const signature = fingerprint(failed.map((s) => `${s.source.retailer}:${s.health.failureCategory}:${s.health.failureSummary}`).sort().join(\"|\"));\n  const existing = state.incident?.fingerprint === signature ? state.incident : null;\n  const incidentId = existing?.incidentId || `SALMON-${names.join(\"-\").toUpperCase()}-${now.slice(0, 10).replaceAll(\"-\", \"\")}-${signature.slice(-4).toUpperCase()}`;\n  const executionIds = [...(existing?.executionIds || []), ...(executionId ? [String(executionId)] : [])].slice(-20);\n  const incident = {\n    schemaVersion: config.REPAIR_PAYLOAD_SCHEMA_VERSION, incidentId, fingerprint: signature,\n    workflow: { name: \"Estonian Salmon Price Monitor\", id: state.workflowId || \"pending\", sourceRevision: state.sourceRevision || \"repository-export\", repositoryPath: \"workflows/estonian-salmon-price-monitor\" },\n    repairMode: \"manual\", dispatchStatus: \"not_dispatched\", dispatchAttemptCount: 0, status: \"open\",\n    affectedSources: names, failureCategory: failed[0].health.failureCategory,\n    summary: failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \"),\n    failedNode: \"Retailer adapter\", executionIds, firstFailureAt: existing?.firstFailureAt || now,\n    latestFailureAt: now, lastFullySuccessfulAt: state.lastFullySuccessfulAt || null,\n    consecutiveFailedRuns: state.consecutiveFailedRuns, responseMetadata: failed.map((s) => ({\n      retailer: s.source.retailer, status: s.health.responseStatus, contentType: s.health.responseContentType,\n      fingerprint: s.health.responseFingerprint, productsReceived: s.health.productsReceived, productsParsed: s.health.productsParsed,\n    })),\n    repairResult: null, repairBranch: null, repairCommit: null, repairValidation: null, deploymentApproval: null,\n  };\n  incident.repairHandoff = {\n    schemaVersion: 1, incidentId, workflowId: incident.workflow.id, workflowName: incident.workflow.name,\n    sourceRevision: incident.workflow.sourceRevision, repositoryPath: incident.workflow.repositoryPath,\n    affectedRetailer: names, failureCategory: incident.failureCategory, summary: incident.summary,\n    executionIds, responseFingerprint: signature,\n    allowedRepositoryScope: [\"workflows/estonian-salmon-price-monitor/workflow.json\", \"workflows/estonian-salmon-price-monitor/fixtures/**\", \"workflows/estonian-salmon-price-monitor/*.test.js\"],\n    requestedAction: \"investigate_prepare_and_test_repair\", productionDeploymentAllowed: false,\n  };\n  return incident;\n}\n\nfunction processRun(sources, options = {}) {\n  const config = { ...DEFAULT_CONFIG, ...(options.config || {}) };\n  const mode = options.mode === \"on_demand\" ? \"on_demand\" : \"scheduled\";\n  const state = options.state || {};\n  const valid = sources.filter((s) => s.health.status !== \"failed\");\n  const failed = sources.filter((s) => s.health.status !== \"success\");\n  const matches = valid.flatMap((s) => s.offerings).filter((o) => o.in_stock && isSalmonFillet({ product_name: o.product_name })).sort((a, b) => a.gross_price_per_kg_cents - b.gross_price_per_kg_cents);\n  if (mode === \"on_demand\") return { mode, results: matches.slice(0, config.ON_DEMAND_RESULT_LIMIT), failed, fullySuccessful: failed.length === 0, state };\n\n  state.offers ||= {};\n  state.consecutiveFailedRuns ||= 0;\n  const successfulRetailers = new Set(sources.filter((s) => s.health.status === \"success\").map((s) => s.source.retailer));\n  const current = new Map(matches.map((o) => [o.source_offer_identity, o]));\n  const alerts = [];\n  for (const item of matches) {\n    const qualifying = item.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100;\n    const prior = state.offers[item.source_offer_identity];\n    if (qualifying && !prior?.qualifying) alerts.push(item);\n    state.offers[item.source_offer_identity] = { qualifying, lastSeenAt: Date.now(), retailer: item.retailer };\n  }\n  for (const [identity, prior] of Object.entries(state.offers)) {\n    if (!current.has(identity) && successfulRetailers.has(prior.retailer)) prior.qualifying = false;\n    if (Date.now() - Number(prior.lastSeenAt || 0) > config.STATE_RETENTION_DAYS * 86400000) delete state.offers[identity];\n  }\n  let operationalMessage = null;\n  if (failed.length) {\n    state.consecutiveFailedRuns += 1;\n    state.incident = incidentFor(failed, state, config, options.executionId);\n    if (state.consecutiveFailedRuns >= 3 && !state.warningSent) {\n      state.warningSent = true;\n      operationalMessage = formatWarning(state.incident);\n    }\n  } else {\n    if (state.warningSent) operationalMessage = `**Salmon monitor recovered**\\nAll configured retailer sources completed successfully. Incident ${state.incident?.incidentId || \"\"} is closed.`;\n    if (state.incident) state.incident.status = \"closed\";\n    state.consecutiveFailedRuns = 0;\n    state.warningSent = false;\n    state.lastFullySuccessfulAt = new Date().toISOString();\n  }\n  return { mode, results: alerts, failed, fullySuccessful: failed.length === 0, operationalMessage, state };\n}\n\nfunction euro(c) { return `€${(c / 100).toFixed(2)}`; }\nfunction formatOffering(o, rank, config = DEFAULT_CONFIG) {\n  const lines = [\n    `${rank}. **${o.retailer}** — ${o.product_name}`,\n    `${euro(o.gross_price_per_kg_cents)}/kg incl. VAT · ${o.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100 ? \"below €10 alert threshold\" : \"at/above €10 threshold\"}`,\n    `${o.store_or_region} · ${o.condition} · ${o.price_type}${o.loyalty_card_required ? \" (loyalty card required)\" : \"\"}`,\n  ];\n  if (o.package_gross_price_cents) lines.push(`Package: ${euro(o.package_gross_price_cents)}${o.package_weight_kg ? ` / ${o.package_weight_kg} kg` : \"\"}`);\n  if (o.minimum_quantity > 1) lines.push(`Minimum quantity: ${o.minimum_quantity}`);\n  if (o.promotion_valid_until) lines.push(`Promotion ends: ${o.promotion_valid_until}`);\n  lines.push(o.product_url);\n  return lines.join(\"\\n\");\n}\nfunction formatOnDemand(outcome, config = DEFAULT_CONFIG) {\n  if (!outcome.results.length && !outcome.failed.length) return \"No matching salmon-fillet offerings are currently available.\";\n  if (!outcome.results.length) return `Salmon price check failed: ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \")}`;\n  const header = outcome.failed.length ? `Cheapest available matches from successful sources (partial; failed: ${outcome.failed.map((s) => s.source.retailer).join(\", \")}):` : \"Three cheapest current salmon-fillet offerings:\";\n  return [header, ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatAlert(outcome, config = DEFAULT_CONFIG) {\n  return [\"**Salmon fillet below €10/kg**\", ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatWarning(incident) {\n  return `**Salmon monitor operational warning**\\nIncident: ${incident.incidentId}\\nWorkflow: ${incident.workflow.name} (${incident.workflow.id})\\nAffected: ${incident.affectedSources.join(\", \")}\\nCategory: ${incident.failureCategory}\\n${incident.summary}\\nFailures: ${incident.consecutiveFailedRuns}; executions: ${incident.executionIds.join(\", \") || \"unavailable\"}\\nFirst: ${incident.firstFailureAt}; latest: ${incident.latestFailureAt}; last successful: ${incident.lastFullySuccessfulAt || \"unknown\"}\\nRepository: ${incident.workflow.repositoryPath}\\n\\n@Mihkel investigate and fix n8n salmon incident ${incident.incidentId}. Prepare and test the repair, commit it to the existing repository, but do not deploy it without my approval.`;\n}\nfunction commandMatches(value) { return /^\\s*n8n\\s+salmon\\s*$/i.test(String(value)); }\n\nconst raw = $input.first().json;\nconst body = typeof raw.body === \"string\" ? raw.body : (typeof raw.data === \"string\" ? raw.data : JSON.stringify(raw.body ?? raw.data ?? raw));\nreturn [{ json: parseKaupmees(body, $items(\"Central Configuration\")[0].json) }];"
+      }
+    },
+    {
+      "id": "merge",
+      "name": "Merge Retailer Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        150,
+        0
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 4
+      }
+    },
+    {
+      "id": "aggregate",
+      "name": "Normalize State and Build Repair Handoff",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const DEFAULT_CONFIG = Object.freeze({\n  SCHEDULE_CRON: \"0 7 * * *\",\n  SCHEDULE_TIMEZONE: \"UTC\",\n  ALERT_BELOW_GROSS_EUR_PER_KG: 10,\n  ESTONIAN_VAT_RATE: 0.24,\n  ON_DEMAND_RESULT_LIMIT: 3,\n  STATE_RETENTION_DAYS: 90,\n  SOURCE_MAX_RETRIES: 3,\n  SHOPPING_AREA: \"Tallinn\",\n  ENABLED_RETAILERS: [\"selver\", \"rimi\", \"barbora\", \"kaupmees\"],\n  SELVER_PROXY_URL: \"http://192.168.21.1:3128\",\n  REPAIR_MODE: \"manual\",\n  AUTOMATIC_REPAIR_DISPATCH_ENABLED: false,\n  REPAIR_PAYLOAD_SCHEMA_VERSION: 1,\n});\n\nfunction text(value) {\n  return String(value ?? \"\")\n    .replace(/<[^>]*>/g, \" \")\n    .replace(/&nbsp;|&#160;/g, \" \")\n    .replace(/&amp;/g, \"&\")\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cents(value) {\n  const normalized = String(value).trim().replace(/\\s/g, \"\").replace(\",\", \".\");\n  if (!/^\\d+(?:\\.\\d{1,4})?$/.test(normalized)) throw new Error(`Invalid price: ${value}`);\n  return Math.round(Number(normalized) * 100);\n}\n\nfunction pricePerKgCents(value) {\n  return cents(value);\n}\n\nfunction grossFromNetCents(net, vat = 0.24) {\n  return Math.round(net * (1 + vat));\n}\n\nfunction fingerprint(input) {\n  let hash = 2166136261;\n  for (const c of String(input)) {\n    hash ^= c.charCodeAt(0);\n    hash = Math.imul(hash, 16777619);\n  }\n  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, \"0\")}`;\n}\n\nfunction isSalmonFillet(record) {\n  const value = `${record.product_name || \"\"} ${record.category || \"\"} ${record.description || \"\"} ${record.ingredients || \"\"}`.toLocaleLowerCase(\"et\");\n  if (!/(lõhe\\s*filee|lohe\\s*filee|salmon\\s+fillet)/i.test(value)) return false;\n  if (/(forell|trout|terve\\s+lõhe|whole\\s+salmon|rookimata|gutted|steak|suits|smok|soolat|salted|cured|gravlax|marin|maitsest|season|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;\n  if (record.category && /(lemmikloom|kass|koer|konserv|valmistoit)/i.test(record.category)) return false;\n  return true;\n}\n\nfunction conditionFor(value) {\n  const s = String(value).toLocaleLowerCase(\"et\");\n  if (/külmut|frozen/.test(s)) return \"frozen\";\n  if (/jahut|chilled/.test(s)) return \"chilled\";\n  return \"fresh\";\n}\n\nfunction offering(fields) {\n  const gross = Number(fields.gross_price_per_kg_cents);\n  if (!fields.product_id || !fields.product_name || !Number.isInteger(gross) || gross <= 0) {\n    throw new Error(\"Missing normalized offering fields\");\n  }\n  const priceType = fields.price_type || \"regular\";\n  return {\n    retailer: fields.retailer,\n    store_or_region: fields.store_or_region,\n    product_id: String(fields.product_id),\n    ean: fields.ean || null,\n    product_name: text(fields.product_name),\n    product_url: fields.product_url,\n    condition: fields.condition || conditionFor(`${fields.product_name} ${fields.category || \"\"}`),\n    trim_or_cut: fields.trim_or_cut || null,\n    package_weight_kg: fields.package_weight_kg ?? null,\n    package_gross_price_cents: fields.package_gross_price_cents ?? null,\n    gross_price_per_kg_cents: gross,\n    source_price_per_kg_cents: fields.source_price_per_kg_cents ?? gross,\n    source_price_includes_vat: fields.source_price_includes_vat !== false,\n    price_type: priceType,\n    loyalty_card_required: Boolean(fields.loyalty_card_required),\n    minimum_quantity: fields.minimum_quantity ?? 1,\n    minimum_purchase_total_cents: fields.minimum_purchase_total_cents ?? null,\n    in_stock: fields.in_stock !== false,\n    promotion_valid_from: fields.promotion_valid_from || null,\n    promotion_valid_until: fields.promotion_valid_until || null,\n    fetched_at: fields.fetched_at || new Date().toISOString(),\n    source_offer_identity: `${fields.retailer}|${fields.store_or_region}|${fields.product_id}|${priceType}`,\n  };\n}\n\nfunction health(retailer, html, offerings, errors, extra = {}) {\n  return {\n    status: errors.length ? (offerings.length ? \"partial\" : \"failed\") : \"success\",\n    responseStatus: extra.status ?? 200,\n    responseContentType: extra.contentType || \"text/html\",\n    responseFingerprint: fingerprint(html),\n    productsReceived: extra.productsReceived ?? offerings.length,\n    productsParsed: offerings.length,\n    parseErrors: errors.length,\n    failureCategory: errors.length ? (extra.failureCategory || \"probable_schema_change\") : null,\n    failureSummary: errors.length ? errors[0] : null,\n  };\n}\n\nfunction envelope(retailer, region, html, offerings, errors, extra = {}) {\n  return {\n    source: { retailer, storeOrRegion: region, fetchedAt: new Date().toISOString() },\n    health: health(retailer, html, offerings, errors, extra),\n    offerings,\n  };\n}\n\nfunction parseBarbora(html, config = DEFAULT_CONFIG) {\n  const match = String(html).match(/window\\.b_productList\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!match) return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Expected window.b_productList was not found\"]);\n  let products;\n  try { products = JSON.parse(match[1]); } catch { return envelope(\"barbora\", \"Tallinn (T032)\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.title, category: p.category_name_full_path })) continue;\n      if (p.status !== \"active\") continue;\n      const unit = p.units?.[0] || {};\n      const perKg = p.comparative_unit === \"kg\" ? p.comparative_unit_price : null;\n      if (!perKg) throw new Error(`Missing unit price for ${p.id}`);\n      results.push(offering({\n        retailer: \"barbora\", store_or_region: `Tallinn (${p.shopcode || \"T032\"})`,\n        product_id: p.id, product_name: p.title, category: p.category_name_full_path,\n        product_url: `https://barbora.ee/toode/${p.Url}`, gross_price_per_kg_cents: cents(perKg),\n        package_gross_price_cents: unit.unit === \"tk\" ? cents(unit.price) : null,\n        package_weight_kg: unit.unit === \"kg\" ? Number(unit.defaultValue || unit.min) : null,\n        price_type: p.promotion?.type === \"LOYALTY_PRICE\" ? \"loyalty\" : p.promotion ? \"promotional\" : \"regular\",\n        loyalty_card_required: p.promotion?.loyaltyCardRequired, minimum_quantity: p.promotion?.minQuantity || 1,\n        promotion_valid_until: p.ShowInOffersTo, in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"barbora\", \"Tallinn (T032)\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseRimi(html) {\n  const cards = String(html).match(/<li class=\"product-grid__item\">[\\s\\S]*?<\\/li>/g);\n  if (!cards) return envelope(\"rimi\", \"Tallinn e-store\", html, [], [\"Expected product grid was not found\"]);\n  const results = [], errors = [];\n  for (const card of cards) {\n    try {\n      const id = card.match(/data-product-code=\"([^\"]+)\"/)?.[1];\n      const name = text(card.match(/class=\"card__name\">([\\s\\S]*?)<\\/p>/)?.[1]);\n      if (!isSalmonFillet({ product_name: name, category: card })) continue;\n      if (!/js-add-to-cart/.test(card)) continue;\n      const unit = card.match(/Hind ühiku kohta:\\s*([\\d,.]+)\\s*€\\/kg/i)?.[1];\n      if (!unit) throw new Error(`Missing €/kg for ${id}`);\n      const href = card.match(/class=\"card__url[^\"]*\" href=\"([^\"]+)\"/)?.[1];\n      const packagePrice = card.match(/data-gtm-eec-product='[^']*\"price\":([\\d.]+)/)?.[1];\n      results.push(offering({\n        retailer: \"rimi\", store_or_region: \"Tallinn e-store\", product_id: id, product_name: name,\n        product_url: `https://www.rimi.ee${href}`, gross_price_per_kg_cents: cents(unit),\n        package_gross_price_cents: packagePrice ? cents(packagePrice) : null,\n        package_weight_kg: Number(name.match(/(\\d+(?:[,.]\\d+)?)\\s*kg\\b/i)?.[1]?.replace(\",\", \".\")) || null,\n        price_type: /old-price-tag/.test(card) ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"rimi\", \"Tallinn e-store\", html, results, errors, { productsReceived: cards.length });\n}\n\nfunction parseKaupmees(html, config = DEFAULT_CONFIG) {\n  const setup = String(html).match(/window\\.setupApp\\s*&&\\s*window\\.setupApp\\((\\{[\\s\\S]*?\\})\\);/);\n  if (!setup) return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Expected setupApp state was not found\"]);\n  const productJson = String(html).match(/(?:window\\.(?:products|productList)|products)\\s*=\\s*(\\[[\\s\\S]*?\\]);/);\n  if (!productJson) {\n    return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Public page loaded, but expected product collection was not present\"], { failureCategory: \"probable_schema_change\" });\n  }\n  let products;\n  try { products = JSON.parse(productJson[1]); } catch { return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, [], [\"Product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name || p.title, category: p.category })) continue;\n      const sourceCents = cents(p.price_per_kg || p.unit_price);\n      const includesVat = p.price_includes_vat === true;\n      results.push(offering({\n        retailer: \"kaupmees\", store_or_region: \"Tallinn / eKaupmees\", product_id: p.id || p.code,\n        product_name: p.name || p.title, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.kaupmees.ee${p.url}`,\n        gross_price_per_kg_cents: includesVat ? sourceCents : grossFromNetCents(sourceCents, config.ESTONIAN_VAT_RATE),\n        source_price_per_kg_cents: sourceCents, source_price_includes_vat: includesVat,\n        minimum_quantity: p.minimum_quantity || 1, price_type: p.price_type || \"regular\", in_stock: p.in_stock !== false,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"kaupmees\", \"Tallinn / eKaupmees\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction parseSelver(html) {\n  const records = String(html).match(/\"records\"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*,\\s*\"meta\"/);\n  if (!records) {\n    const category = /js_cloud_search_url|klevu/i.test(html) ? \"probable_schema_change\" : \"access_denied\";\n    return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Expected Klevu result records were not found\"], { failureCategory: category });\n  }\n  let products;\n  try { products = JSON.parse(records[1]); } catch { return envelope(\"selver\", \"Tallinn e-store\", html, [], [\"Klevu product JSON is invalid\"]); }\n  const results = [], errors = [];\n  for (const p of products) {\n    try {\n      if (!isSalmonFillet({ product_name: p.name, category: p.category })) continue;\n      if (String(p.inStock ?? p.in_stock) === \"no\" || p.inStock === false) continue;\n      const unit = p.salePricePerUnit || p.pricePerUnit || p.unitPrice;\n      if (!unit) throw new Error(`Missing €/kg for ${p.id}`);\n      results.push(offering({\n        retailer: \"selver\", store_or_region: \"Tallinn e-store\", product_id: p.id || p.sku,\n        product_name: p.name, product_url: p.url?.startsWith(\"http\") ? p.url : `https://www.selver.ee/${p.url}`,\n        gross_price_per_kg_cents: cents(unit), package_gross_price_cents: p.salePrice ? cents(p.salePrice) : null,\n        price_type: p.salePrice ? \"promotional\" : \"regular\", in_stock: true,\n      }));\n    } catch (error) { errors.push(error.message); }\n  }\n  return envelope(\"selver\", \"Tallinn e-store\", html, results, errors, { productsReceived: products.length });\n}\n\nfunction incidentFor(failed, state, config, executionId = null, now = new Date().toISOString()) {\n  const names = failed.map((s) => s.source.retailer).sort();\n  const signature = fingerprint(failed.map((s) => `${s.source.retailer}:${s.health.failureCategory}:${s.health.failureSummary}`).sort().join(\"|\"));\n  const existing = state.incident?.fingerprint === signature ? state.incident : null;\n  const incidentId = existing?.incidentId || `SALMON-${names.join(\"-\").toUpperCase()}-${now.slice(0, 10).replaceAll(\"-\", \"\")}-${signature.slice(-4).toUpperCase()}`;\n  const executionIds = [...(existing?.executionIds || []), ...(executionId ? [String(executionId)] : [])].slice(-20);\n  const incident = {\n    schemaVersion: config.REPAIR_PAYLOAD_SCHEMA_VERSION, incidentId, fingerprint: signature,\n    workflow: { name: \"Estonian Salmon Price Monitor\", id: state.workflowId || \"pending\", sourceRevision: state.sourceRevision || \"repository-export\", repositoryPath: \"workflows/estonian-salmon-price-monitor\" },\n    repairMode: \"manual\", dispatchStatus: \"not_dispatched\", dispatchAttemptCount: 0, status: \"open\",\n    affectedSources: names, failureCategory: failed[0].health.failureCategory,\n    summary: failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \"),\n    failedNode: \"Retailer adapter\", executionIds, firstFailureAt: existing?.firstFailureAt || now,\n    latestFailureAt: now, lastFullySuccessfulAt: state.lastFullySuccessfulAt || null,\n    consecutiveFailedRuns: state.consecutiveFailedRuns, responseMetadata: failed.map((s) => ({\n      retailer: s.source.retailer, status: s.health.responseStatus, contentType: s.health.responseContentType,\n      fingerprint: s.health.responseFingerprint, productsReceived: s.health.productsReceived, productsParsed: s.health.productsParsed,\n    })),\n    repairResult: null, repairBranch: null, repairCommit: null, repairValidation: null, deploymentApproval: null,\n  };\n  incident.repairHandoff = {\n    schemaVersion: 1, incidentId, workflowId: incident.workflow.id, workflowName: incident.workflow.name,\n    sourceRevision: incident.workflow.sourceRevision, repositoryPath: incident.workflow.repositoryPath,\n    affectedRetailer: names, failureCategory: incident.failureCategory, summary: incident.summary,\n    executionIds, responseFingerprint: signature,\n    allowedRepositoryScope: [\"workflows/estonian-salmon-price-monitor/workflow.json\", \"workflows/estonian-salmon-price-monitor/fixtures/**\", \"workflows/estonian-salmon-price-monitor/*.test.js\"],\n    requestedAction: \"investigate_prepare_and_test_repair\", productionDeploymentAllowed: false,\n  };\n  return incident;\n}\n\nfunction processRun(sources, options = {}) {\n  const config = { ...DEFAULT_CONFIG, ...(options.config || {}) };\n  const mode = options.mode === \"on_demand\" ? \"on_demand\" : \"scheduled\";\n  const state = options.state || {};\n  const valid = sources.filter((s) => s.health.status !== \"failed\");\n  const failed = sources.filter((s) => s.health.status !== \"success\");\n  const matches = valid.flatMap((s) => s.offerings).filter((o) => o.in_stock && isSalmonFillet({ product_name: o.product_name })).sort((a, b) => a.gross_price_per_kg_cents - b.gross_price_per_kg_cents);\n  if (mode === \"on_demand\") return { mode, results: matches.slice(0, config.ON_DEMAND_RESULT_LIMIT), failed, fullySuccessful: failed.length === 0, state };\n\n  state.offers ||= {};\n  state.consecutiveFailedRuns ||= 0;\n  const successfulRetailers = new Set(sources.filter((s) => s.health.status === \"success\").map((s) => s.source.retailer));\n  const current = new Map(matches.map((o) => [o.source_offer_identity, o]));\n  const alerts = [];\n  for (const item of matches) {\n    const qualifying = item.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100;\n    const prior = state.offers[item.source_offer_identity];\n    if (qualifying && !prior?.qualifying) alerts.push(item);\n    state.offers[item.source_offer_identity] = { qualifying, lastSeenAt: Date.now(), retailer: item.retailer };\n  }\n  for (const [identity, prior] of Object.entries(state.offers)) {\n    if (!current.has(identity) && successfulRetailers.has(prior.retailer)) prior.qualifying = false;\n    if (Date.now() - Number(prior.lastSeenAt || 0) > config.STATE_RETENTION_DAYS * 86400000) delete state.offers[identity];\n  }\n  let operationalMessage = null;\n  if (failed.length) {\n    state.consecutiveFailedRuns += 1;\n    state.incident = incidentFor(failed, state, config, options.executionId);\n    if (state.consecutiveFailedRuns >= 3 && !state.warningSent) {\n      state.warningSent = true;\n      operationalMessage = formatWarning(state.incident);\n    }\n  } else {\n    if (state.warningSent) operationalMessage = `**Salmon monitor recovered**\\nAll configured retailer sources completed successfully. Incident ${state.incident?.incidentId || \"\"} is closed.`;\n    if (state.incident) state.incident.status = \"closed\";\n    state.consecutiveFailedRuns = 0;\n    state.warningSent = false;\n    state.lastFullySuccessfulAt = new Date().toISOString();\n  }\n  return { mode, results: alerts, failed, fullySuccessful: failed.length === 0, operationalMessage, state };\n}\n\nfunction euro(c) { return `€${(c / 100).toFixed(2)}`; }\nfunction formatOffering(o, rank, config = DEFAULT_CONFIG) {\n  const lines = [\n    `${rank}. **${o.retailer}** — ${o.product_name}`,\n    `${euro(o.gross_price_per_kg_cents)}/kg incl. VAT · ${o.gross_price_per_kg_cents < config.ALERT_BELOW_GROSS_EUR_PER_KG * 100 ? \"below €10 alert threshold\" : \"at/above €10 threshold\"}`,\n    `${o.store_or_region} · ${o.condition} · ${o.price_type}${o.loyalty_card_required ? \" (loyalty card required)\" : \"\"}`,\n  ];\n  if (o.package_gross_price_cents) lines.push(`Package: ${euro(o.package_gross_price_cents)}${o.package_weight_kg ? ` / ${o.package_weight_kg} kg` : \"\"}`);\n  if (o.minimum_quantity > 1) lines.push(`Minimum quantity: ${o.minimum_quantity}`);\n  if (o.promotion_valid_until) lines.push(`Promotion ends: ${o.promotion_valid_until}`);\n  lines.push(o.product_url);\n  return lines.join(\"\\n\");\n}\nfunction formatOnDemand(outcome, config = DEFAULT_CONFIG) {\n  if (!outcome.results.length && !outcome.failed.length) return \"No matching salmon-fillet offerings are currently available.\";\n  if (!outcome.results.length) return `Salmon price check failed: ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join(\"; \")}`;\n  const header = outcome.failed.length ? `Cheapest available matches from successful sources (partial; failed: ${outcome.failed.map((s) => s.source.retailer).join(\", \")}):` : \"Three cheapest current salmon-fillet offerings:\";\n  return [header, ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatAlert(outcome, config = DEFAULT_CONFIG) {\n  return [\"**Salmon fillet below €10/kg**\", ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join(\"\\n\\n\");\n}\nfunction formatWarning(incident) {\n  return `**Salmon monitor operational warning**\\nIncident: ${incident.incidentId}\\nWorkflow: ${incident.workflow.name} (${incident.workflow.id})\\nAffected: ${incident.affectedSources.join(\", \")}\\nCategory: ${incident.failureCategory}\\n${incident.summary}\\nFailures: ${incident.consecutiveFailedRuns}; executions: ${incident.executionIds.join(\", \") || \"unavailable\"}\\nFirst: ${incident.firstFailureAt}; latest: ${incident.latestFailureAt}; last successful: ${incident.lastFullySuccessfulAt || \"unknown\"}\\nRepository: ${incident.workflow.repositoryPath}\\n\\n@Mihkel investigate and fix n8n salmon incident ${incident.incidentId}. Prepare and test the repair, commit it to the existing repository, but do not deploy it without my approval.`;\n}\nfunction commandMatches(value) { return /^\\s*n8n\\s+salmon\\s*$/i.test(String(value)); }\n\nconst cfg = $items(\"Central Configuration\")[0].json;\nlet mode = \"scheduled\";\ntry { if ($items(\"On-demand Context\").length) mode = \"on_demand\"; } catch {}\nconst state = $getWorkflowStaticData(\"global\");\nconst outcome = processRun($input.all().map(x => x.json), { config: cfg, mode, state, executionId: $execution.id });\nif (mode === \"on_demand\") return [{ json: { route: \"response\", ok: outcome.failed.length < cfg.ENABLED_RETAILERS.length, message: formatOnDemand(outcome, cfg), partial: outcome.failed.length > 0, failedRetailers: outcome.failed.map(x => x.source.retailer) } }];\nconst rows = [];\nif (outcome.results.length) rows.push({ json: { route: \"discord\", content: formatAlert(outcome, cfg), channelId: cfg.DELIVERY_CHANNEL } });\nif (outcome.operationalMessage) rows.push({ json: { route: \"discord\", content: outcome.operationalMessage, channelId: cfg.DELIVERY_CHANNEL } });\nreturn rows;"
+      }
+    },
+    {
+      "id": "route",
+      "name": "On-demand Response?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        610,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "route",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "response",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Return Salmon Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        850,
+        -100
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: $json.ok, message: $json.message, partial: $json.partial, failedRetailers: $json.failedRetailers } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "discord",
+      "name": "Send Through Mildred",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        850,
+        100
+      ],
+      "credentials": {
+        "discordBotApi": {
+          "id": "mildred-discord-bot",
+          "name": "Mildred Discord"
+        }
+      },
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "guildId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "998481392159686696"
+        },
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.channelId }}"
+        },
+        "content": "={{ $json.content }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Scheduled Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scheduled Context": {
+      "main": [
+        [
+          {
+            "node": "Central Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On-demand Trigger": {
+      "main": [
+        [
+          {
+            "node": "On-demand Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On-demand Context": {
+      "main": [
+        [
+          {
+            "node": "Central Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Central Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Selver",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Rimi",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Barbora",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Kaupmees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Retailer Results": {
+      "main": [
+        [
+          {
+            "node": "Normalize State and Build Repair Handoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize State and Build Repair Handoff": {
+      "main": [
+        [
+          {
+            "node": "On-demand Response?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On-demand Response?": {
+      "main": [
+        [
+          {
+            "node": "Return Salmon Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Through Mildred",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Selver": {
+      "main": [
+        [
+          {
+            "node": "Parse Selver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Selver": {
+      "main": [
+        [
+          {
+            "node": "Merge Retailer Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Rimi": {
+      "main": [
+        [
+          {
+            "node": "Parse Rimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Rimi": {
+      "main": [
+        [
+          {
+            "node": "Merge Retailer Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Barbora": {
+      "main": [
+        [
+          {
+            "node": "Parse Barbora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Barbora": {
+      "main": [
+        [
+          {
+            "node": "Merge Retailer Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Fetch Kaupmees": {
+      "main": [
+        [
+          {
+            "node": "Parse Kaupmees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Kaupmees": {
+      "main": [
+        [
+          {
+            "node": "Merge Retailer Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveManualExecutions": true
+  }
+}
