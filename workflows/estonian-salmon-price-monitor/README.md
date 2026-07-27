@@ -9,17 +9,16 @@ Production workflow ID: `C1cswl6I7htHr8UQ`.
 
 Enabled sources:
 
-- Selver, Tallinn e-store HTML/Klevu data, through
+- Selver, Tallinn e-store public Klevu structured search, through
   `http://192.168.21.1:3128`.
 - Rimi, Tallinn e-store public search HTML.
 - Maxima through Barbora, Tallinn shop `T032`, public embedded product JSON.
-- Kaupmees, Tallinn/eKaupmees public page state.
+- Kaupmees, Tallinn/eKaupmees public `/products/search/` JSON.
 
-Current live validation (2026-07-27): Rimi and Barbora are reachable in the
-validation environment. The deployed n8n response currently reports Selver,
-Rimi, and Kaupmees as partial source failures because their expected
-client-loaded product collections are absent from n8n's fetched responses.
-This is intentionally not treated as an empty result.
+Live validation on 2026-07-27 confirms successful schema validation for all
+four sources. A structurally valid source with no qualifying raw salmon fillet
+is treated as a successful empty result; missing collections and incompatible
+responses remain explicit failures.
 
 Coop is intentionally excluded because no suitable official e-channel is
 available for the configured area. Prisma is not included.

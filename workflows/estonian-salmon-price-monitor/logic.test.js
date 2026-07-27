@@ -1,13 +1,31 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isSalmonFillet, offering, processRun, grossFromNetCents, commandMatches } = require("./logic");
+const { isSalmonFillet, offering, processRun, grossFromNetCents, commandMatches, parseSelver, parseKaupmees } = require("./logic");
 
 test("classification includes raw fillets and excludes near misses", () => {
   for (const name of ["Värske lõhefilee C-trim", "Külmutatud lõhefilee portsjonid", "Salmon fillet skin-on"]) assert.equal(isSalmonFillet({ product_name: name }), true, name);
   for (const name of ["Forellifilee", "Terve lõhe", "Külmsuitsu lõhefilee", "Soolatud lõhefilee", "Marineeritud lõhefilee", "Lõhefilee konserv", "Lõhe tumelihafilee"]) assert.equal(isSalmonFillet({ product_name: name }), false, name);
 });
 test("money conversion uses integer cents", () => assert.equal(grossFromNetCents(999, .24), 1239));
+test("Selver structured search normalizes package and variable-weight prices", () => {
+  const parsed = parseSelver({ queryResults: [{ records: [
+    { id:"1", sku:"A", name:"Lõhefilee jahutatud C-trim, kg", category:"värske kala", inStock:"yes", salePrice:"9.99", basePrice:"10.99", is_qty_decimal:"1", url:"https://example.test/1" },
+    { id:"2", sku:"B", name:"Lõhefilee portsjonid 250 g", category:"külmutatud kala", inStock:"yes", salePrice:"4.00", basePrice:"4.00", is_qty_decimal:"0", url:"https://example.test/2" },
+  ] }] });
+  assert.equal(parsed.health.status, "success");
+  assert.deepEqual(parsed.offerings.map(x => x.gross_price_per_kg_cents), [999, 1600]);
+});
+test("Kaupmees explicit net price receives 24% VAT once", () => {
+  const parsed = parseKaupmees({ foundProducts: { "7": {
+    productId:7, code:"X", ean:"1", name:"Atlandi lõhefilee B-trim kg", categoryName:"Toidukaubad", mainGroupName:"Kalatooted", subGroupName:"Jahutatud",
+    standardPrice:8, standardPriceMissing:false, countingCode:"kg", countingUnitQuantity:1, taxCodeId:6,
+    inCustomerLocationAssortment:true, wholesalePackageQuantity:1, cooledProduct:true,
+  } } });
+  assert.equal(parsed.health.status, "success");
+  assert.equal(parsed.offerings[0].gross_price_per_kg_cents, 992);
+  assert.equal(parsed.offerings[0].source_price_includes_vat, false);
+});
 test("strict command matcher", () => {
   assert.equal(commandMatches(" n8n salmon "), true);
   assert.equal(commandMatches("N8N SALMON"), true);

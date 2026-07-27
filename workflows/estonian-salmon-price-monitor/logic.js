@@ -53,7 +53,7 @@ function fingerprint(input) {
 function isSalmonFillet(record) {
   const value = `${record.product_name || ""} ${record.category || ""} ${record.description || ""} ${record.ingredients || ""}`.toLocaleLowerCase("et");
   if (!/(lõhe\s*filee|lohe\s*filee|salmon\s+fillet)/i.test(value)) return false;
-  if (/(forell|trout|terve\s+lõhe|whole\s+salmon|rookimata|gutted|steak|suits|smok|soolat|salted|cured|gravlax|marin|maitsest|season|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;
+  if (/(forell|trout|terve\s+lõhe|whole\s+salmon|rookimata|gutted|steak|suits|smok|soola|salted|cured|gravlax|marin|maitsest|season|troopiline|teriyaki|barbecue|bbq|grill|šaš|shash|küpset|cooked|konserv|canned|patee|mousse|suflee|spread|hakk|mince|burger|supp|soup|pea|head|luu|bone|kõhu|belly|scrap|trimmi|tumelihafilee|kastmes|sauce)/i.test(value)) return false;
   if (record.category && /(lemmikloom|kass|koer|konserv|valmistoit)/i.test(record.category)) return false;
   return true;
 }
@@ -149,7 +149,10 @@ function parseBarbora(html, config = DEFAULT_CONFIG) {
 
 function parseRimi(html) {
   const cards = String(html).match(/<li class="product-grid__item">[\s\S]*?<\/li>/g);
-  if (!cards) return envelope("rimi", "Tallinn e-store", html, [], ["Expected product grid was not found"]);
+  if (!cards) {
+    const title = text(String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]) || "no HTML title";
+    return envelope("rimi", "Tallinn e-store", html, [], [`Expected product grid was not found (${title})`]);
+  }
   const results = [], errors = [];
   for (const card of cards) {
     try {
@@ -174,56 +177,65 @@ function parseRimi(html) {
 }
 
 function parseKaupmees(html, config = DEFAULT_CONFIG) {
-  const setup = String(html).match(/window\.setupApp\s*&&\s*window\.setupApp\((\{[\s\S]*?\})\);/);
-  if (!setup) return envelope("kaupmees", "Tallinn / eKaupmees", html, [], ["Expected setupApp state was not found"]);
-  const productJson = String(html).match(/(?:window\.(?:products|productList)|products)\s*=\s*(\[[\s\S]*?\]);/);
-  if (!productJson) {
-    return envelope("kaupmees", "Tallinn / eKaupmees", html, [], ["Public page loaded, but expected product collection was not present"], { failureCategory: "probable_schema_change" });
+  let payload;
+  try { payload = typeof html === "string" ? JSON.parse(html) : html; } catch { return envelope("kaupmees", "Tallinn / eKaupmees", String(html), [], ["Search response JSON is invalid"]); }
+  if (!payload?.foundProducts || typeof payload.foundProducts !== "object") {
+    return envelope("kaupmees", "Tallinn / eKaupmees", JSON.stringify(payload), [], ["Expected foundProducts object was not found"]);
   }
-  let products;
-  try { products = JSON.parse(productJson[1]); } catch { return envelope("kaupmees", "Tallinn / eKaupmees", html, [], ["Product JSON is invalid"]); }
+  const products = Object.values(payload.foundProducts);
   const results = [], errors = [];
   for (const p of products) {
     try {
-      if (!isSalmonFillet({ product_name: p.name || p.title, category: p.category })) continue;
-      const sourceCents = cents(p.price_per_kg || p.unit_price);
-      const includesVat = p.price_includes_vat === true;
+      if (!isSalmonFillet({ product_name: p.name, category: `${p.categoryName || ""} ${p.mainGroupName || ""} ${p.subGroupName || ""}`, description: p.description })) continue;
+      if (!p.inCustomerLocationAssortment || p.standardPriceMissing) continue;
+      if (p.taxCodeId !== 6) throw new Error(`Unexpected VAT code for ${p.productId}`);
+      const packageNetCents = cents(p.standardPrice);
+      const weightKg = p.countingCode === "kg" ? Number(p.countingUnitQuantity) : null;
+      if (!weightKg || weightKg <= 0) throw new Error(`Missing net weight for ${p.productId}`);
+      const sourceNetPerKgCents = Math.round(packageNetCents / weightKg);
       results.push(offering({
-        retailer: "kaupmees", store_or_region: "Tallinn / eKaupmees", product_id: p.id || p.code,
-        product_name: p.name || p.title, product_url: p.url?.startsWith("http") ? p.url : `https://www.kaupmees.ee${p.url}`,
-        gross_price_per_kg_cents: includesVat ? sourceCents : grossFromNetCents(sourceCents, config.ESTONIAN_VAT_RATE),
-        source_price_per_kg_cents: sourceCents, source_price_includes_vat: includesVat,
-        minimum_quantity: p.minimum_quantity || 1, price_type: p.price_type || "regular", in_stock: p.in_stock !== false,
+        retailer: "kaupmees", store_or_region: "Tallinn / eKaupmees", product_id: p.productId,
+        ean: p.ean, product_name: p.name, category: `${p.categoryName || ""} ${p.mainGroupName || ""} ${p.subGroupName || ""}`,
+        description: p.description, product_url: `https://www.kaupmees.ee/products/${p.productId}`,
+        gross_price_per_kg_cents: grossFromNetCents(sourceNetPerKgCents, config.ESTONIAN_VAT_RATE),
+        source_price_per_kg_cents: sourceNetPerKgCents, source_price_includes_vat: false,
+        package_weight_kg: weightKg, package_gross_price_cents: grossFromNetCents(packageNetCents, config.ESTONIAN_VAT_RATE),
+        minimum_quantity: p.wholesalePackageQuantity > 1 ? p.wholesalePackageQuantity : 1,
+        price_type: p.isDiscounted ? "promotional" : "regular", in_stock: true,
+        condition: p.frozenProduct ? "frozen" : p.cooledProduct ? "chilled" : "fresh",
       }));
     } catch (error) { errors.push(error.message); }
   }
-  return envelope("kaupmees", "Tallinn / eKaupmees", html, results, errors, { productsReceived: products.length });
+  return envelope("kaupmees", "Tallinn / eKaupmees", JSON.stringify(payload), results, errors, { productsReceived: products.length, contentType: "application/json" });
 }
 
 function parseSelver(html) {
-  const records = String(html).match(/"records"\s*:\s*(\[[\s\S]*?\])\s*,\s*"meta"/);
-  if (!records) {
-    const category = /js_cloud_search_url|klevu/i.test(html) ? "probable_schema_change" : "access_denied";
-    return envelope("selver", "Tallinn e-store", html, [], ["Expected Klevu result records were not found"], { failureCategory: category });
+  let payload;
+  try { payload = typeof html === "string" ? JSON.parse(html) : html; } catch { return envelope("selver", "Tallinn e-store", String(html), [], ["Klevu response JSON is invalid"]); }
+  const products = payload?.queryResults?.[0]?.records;
+  if (!Array.isArray(products)) {
+    const shape = Object.keys(payload || {}).slice(0, 5).join(",") || "empty object";
+    return envelope("selver", "Tallinn e-store", JSON.stringify(payload), [], [`Expected queryResults[0].records was not found (keys: ${shape})`]);
   }
-  let products;
-  try { products = JSON.parse(records[1]); } catch { return envelope("selver", "Tallinn e-store", html, [], ["Klevu product JSON is invalid"]); }
   const results = [], errors = [];
   for (const p of products) {
     try {
       if (!isSalmonFillet({ product_name: p.name, category: p.category })) continue;
-      if (String(p.inStock ?? p.in_stock) === "no" || p.inStock === false) continue;
-      const unit = p.salePricePerUnit || p.pricePerUnit || p.unitPrice;
-      if (!unit) throw new Error(`Missing €/kg for ${p.id}`);
+      if (String(p.inStock) !== "yes") continue;
+      const packageCents = cents(p.salePrice || p.price);
+      const grams = p.name.match(/(\d+(?:[,.]\d+)?)\s*g\b/i)?.[1];
+      const weightKg = grams ? Number(grams.replace(",", ".")) / 1000 : (/kg\b/i.test(p.name) && p.is_qty_decimal === "1" ? 1 : null);
+      if (!weightKg) throw new Error(`Missing reliable weight for ${p.id}`);
       results.push(offering({
         retailer: "selver", store_or_region: "Tallinn e-store", product_id: p.id || p.sku,
         product_name: p.name, product_url: p.url?.startsWith("http") ? p.url : `https://www.selver.ee/${p.url}`,
-        gross_price_per_kg_cents: cents(unit), package_gross_price_cents: p.salePrice ? cents(p.salePrice) : null,
-        price_type: p.salePrice ? "promotional" : "regular", in_stock: true,
+        category: p.category, gross_price_per_kg_cents: Math.round(packageCents / weightKg),
+        package_gross_price_cents: weightKg === 1 && p.is_qty_decimal === "1" ? null : packageCents,
+        package_weight_kg: weightKg, price_type: Number(p.salePrice) < Number(p.basePrice) ? "promotional" : "regular", in_stock: true,
       }));
     } catch (error) { errors.push(error.message); }
   }
-  return envelope("selver", "Tallinn e-store", html, results, errors, { productsReceived: products.length });
+  return envelope("selver", "Tallinn e-store", JSON.stringify(payload), results, errors, { productsReceived: products.length, contentType: "application/json" });
 }
 
 function incidentFor(failed, state, config, executionId = null, now = new Date().toISOString()) {
@@ -315,7 +327,9 @@ function formatOffering(o, rank, config = DEFAULT_CONFIG) {
 function formatOnDemand(outcome, config = DEFAULT_CONFIG) {
   if (!outcome.results.length && !outcome.failed.length) return "No matching salmon-fillet offerings are currently available.";
   if (!outcome.results.length) return `Salmon price check failed: ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join("; ")}`;
-  const header = outcome.failed.length ? `Cheapest available matches from successful sources (partial; failed: ${outcome.failed.map((s) => s.source.retailer).join(", ")}):` : "Three cheapest current salmon-fillet offerings:";
+  const header = outcome.failed.length
+    ? `Cheapest available matches from successful sources (partial; ${outcome.failed.map((s) => `${s.source.retailer}: ${s.health.failureSummary}`).join("; ")}):`
+    : "Three cheapest current salmon-fillet offerings:";
   return [header, ...outcome.results.map((o, i) => formatOffering(o, i + 1, config))].join("\n\n");
 }
 function formatAlert(outcome, config = DEFAULT_CONFIG) {

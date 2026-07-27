@@ -13,10 +13,10 @@ const config = {
   SHOPPING_AREA: "Tallinn",
   ENABLED_RETAILERS: ["selver", "rimi", "barbora", "kaupmees"],
   RETAILERS: {
-    selver: { url: "https://www.selver.ee/tooted?query=l%C3%B5hefilee", region: "Tallinn e-store", proxy: "http://192.168.21.1:3128" },
+    selver: { url: "https://eucs3v2.ksearchnet.com/cs/v2/search", region: "Tallinn e-store", proxy: "http://192.168.21.1:3128" },
     rimi: { url: "https://www.rimi.ee/epood/ee/otsing?query=l%C3%B5hefilee", region: "Tallinn e-store" },
     barbora: { url: "https://barbora.ee/otsing?q=l%C3%B5hefilee", region: "Tallinn (T032)" },
-    kaupmees: { url: "https://www.kaupmees.ee/products/?query=l%C3%B5hefilee", region: "Tallinn / eKaupmees" },
+    kaupmees: { url: "https://www.kaupmees.ee/products/search/?query=l%C3%B5hefilee", region: "Tallinn / eKaupmees" },
   },
   DELIVERY_SERVER: "998481392159686696", DELIVERY_CHANNEL: "1485193388012601416",
   REPAIR_MODE: "manual", AUTOMATIC_REPAIR_DISPATCH_ENABLED: false, REPAIR_PAYLOAD_SCHEMA_VERSION: 1,
@@ -24,7 +24,14 @@ const config = {
 
 const adapterCode = (fn) => `${logic}
 const raw = $input.first().json;
-const body = typeof raw.body === "string" ? raw.body : (typeof raw.data === "string" ? raw.data : JSON.stringify(raw.body ?? raw.data ?? raw));
+function longestString(value, seen = new Set()) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object" || seen.has(value)) return "";
+  seen.add(value);
+  return Object.values(value).map(v => longestString(v, seen)).sort((a,b) => b.length-a.length)[0] || "";
+}
+const candidate = raw.body ?? raw.data ?? raw;
+const body = typeof candidate === "string" ? candidate : JSON.stringify(candidate);
 return [{ json: ${fn}(body, $items("Central Configuration")[0].json) }];`;
 const aggregateCode = `${logic}
 const cfg = $items("Central Configuration")[0].json;
@@ -53,8 +60,25 @@ const retailers = [
 ];
 for (const [label,key,fn,x,y] of retailers) {
   const opts = { allowUnauthorizedCerts:false, response:{response:{fullResponse:true,responseFormat:"text"}}, timeout:25000 };
-  if (key === "selver") opts.proxy = config.RETAILERS.selver.proxy;
-  nodes.push({id:`fetch-${key}`,name:`Fetch ${label}`,type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[x,y],retryOnFail:true,maxTries:3,waitBetweenTries:1500,onError:"continueRegularOutput",parameters:{url:`={{ $json.RETAILERS.${key}.url }}`,options:opts}});
+  if (key === "selver") opts.response.response = { responseFormat:"json" };
+  const parameters = {url:`={{ $json.RETAILERS.${key}.url }}`,options:opts};
+  if (key === "rimi") {
+    parameters.sendHeaders = true;
+    parameters.headerParameters = { parameters: [
+      { name: "accept", value: "text/html,application/xhtml+xml" },
+      { name: "user-agent", value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36" },
+    ] };
+  }
+  if (key === "selver") {
+    parameters.method = "POST";
+    parameters.sendHeaders = true;
+    parameters.headerParameters = { parameters: [{ name: "content-type", value: "application/json" }] };
+    parameters.sendBody = true;
+    parameters.contentType = "json";
+    parameters.specifyBody = "json";
+    parameters.jsonBody = '={{ { context: { apiKeys: ["klevu-" + "14410928010151845"] }, recordQueries: [{ id: "search", typeOfRequest: "SEARCH", settings: { query: { term: "lõhefilee" }, typeOfRecords: ["KLEVU_PRODUCT"], limit: 24 } }] } }}';
+  }
+  nodes.push({id:`fetch-${key}`,name:`Fetch ${label}`,type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[x,y],retryOnFail:true,maxTries:3,waitBetweenTries:1500,onError:"continueRegularOutput",parameters});
   nodes.push({id:`parse-${key}`,name:`Parse ${label}`,type:"n8n-nodes-base.code",typeVersion:2,position:[x+220,y],parameters:{jsCode:adapterCode(fn)}});
 }
 nodes.push(
