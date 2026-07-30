@@ -7,11 +7,16 @@ trap 'rm -rf -- "$temporary"' EXIT
 
 cd "${project_root}"
 python3 -m unittest discover -s tests -p 'test_*.py'
-node --test workflows/hetzner-auction-monitor/logic.test.js
+for logic_test in workflows/*/logic.test.js; do
+  node --test "${logic_test}"
+done
 bats tests/pre_push.bats
 
-cp -R workflows/hetzner-auction-monitor \
-  "${temporary}/hetzner-auction-monitor"
-node "${temporary}/hetzner-auction-monitor/generate-workflow.js"
-cmp workflows/hetzner-auction-monitor/workflow.json \
-  "${temporary}/hetzner-auction-monitor/workflow.json"
+for generator in workflows/*/generate-workflow.js; do
+  workflow_directory="$(dirname -- "${generator}")"
+  workflow_name="$(basename -- "${workflow_directory}")"
+  cp -R "${workflow_directory}" "${temporary}/${workflow_name}"
+  node "${temporary}/${workflow_name}/generate-workflow.js"
+  cmp "${workflow_directory}/workflow.json" \
+    "${temporary}/${workflow_name}/workflow.json"
+done
