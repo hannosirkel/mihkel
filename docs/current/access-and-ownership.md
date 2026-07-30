@@ -12,6 +12,15 @@ separate webhook key. They post `{}` once to their respective
 without redirects or retries. Raw webhook requests and other paths remain
 prohibited.
 
+The Community API key has the bot-purpose owner's account-wide API authority.
+VM root can call the API directly, and workflow editing can execute code and
+reference existing credential IDs. The helper is a supported interface and
+accident guardrail, not a hard authorization boundary. It supports workflow
+CRUD and activation plus execution list, get, retry, and stop; retry and stop
+require explicit confirmation. Orange's explicit lifecycle exclusively owns
+credential objects, and execution deletion is outside Mihkel's supported
+surface.
+
 Orange and Ansible own the host baseline: OpenClaw configuration and plugins,
 service state, pinned software, credentials, users, SSH, networking, updates,
 Docker configuration, checkout provisioning, and Git credential and hook
@@ -23,6 +32,11 @@ Project-local source, tests, documentation, feature branches, and disposable
 tooling are within Mihkel's normal implementation scope. External messages,
 deployments, merges, credential lifecycle operations, and changes affecting
 other people remain limited to the authority and workflow explicitly provided.
+
+The VM receives no Servitium live or test application credential. Root inside
+the disposable VM can use all credentials deliberately installed there, so
+Orange's network and virtualization policy plus external provider scope form
+the enforceable boundary.
 
 The managed Git configuration activates the repository's tracked `.githooks`
 directory. Its fail-closed pre-commit hook scans staged changes with gitleaks;

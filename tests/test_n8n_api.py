@@ -378,78 +378,19 @@ class N8nApiTests(unittest.TestCase):
                 self.assertIn("confirmation required", stderr)
                 self.assertEqual(FakeN8nHandler.requests, [])
 
-    def test_documented_credential_commands_redact_secret_data(self) -> None:
-        payload = {
-            "name": "Example",
-            "type": "httpHeaderAuth",
-            "data": {"name": "Authorization", "value": "sentinel-credential-value"},
-        }
-        FakeN8nHandler.responses = [
-            (200, {"data": [{"id": "cred_1", "name": "Example"}]}),
-            (200, {"id": "cred_1", "name": "Example"}),
-            (200, {"id": "cred_1", **payload}),
-            (200, {"id": "cred_1", **payload}),
-            (200, {"id": "cred_1", **payload}),
-        ]
-        invocations = [
-            ("credential-list",),
-            ("credential-get", "cred_1"),
-            ("credential-create", "--input", "-"),
-            ("credential-update", "cred_1", "--input", "-", "--confirm"),
-            ("credential-delete", "cred_1", "--confirm"),
-        ]
-        expected = [
-            ("GET", "/api/v1/credentials"),
-            ("GET", "/api/v1/credentials/cred_1"),
-            ("POST", "/api/v1/credentials"),
-            ("PATCH", "/api/v1/credentials/cred_1"),
-            ("DELETE", "/api/v1/credentials/cred_1"),
-        ]
-        combined_output = ""
-        for invocation in invocations:
-            result, stdout, stderr = self.run_cli(
-                *invocation,
-                stdin=json.dumps(payload) if "--input" in invocation else "",
-            )
-            self.assertEqual((result, stderr), (0, ""))
-            combined_output += stdout
-        self.assertEqual(
-            [
-                (
-                    request["method"],
-                    request["path"].split("?", 1)[0],
-                )
-                for request in FakeN8nHandler.requests
-            ],
-            expected,
-        )
-        self.assertNotIn("sentinel-credential-value", combined_output)
-        self.assertIn("[REDACTED]", combined_output)
-        for command in (
-            ("credential-update", "cred_1", "--input", "-"),
-            ("credential-delete", "cred_1"),
-        ):
-            result, _stdout, stderr = self.run_cli(
-                *command,
-                stdin=json.dumps(payload),
-            )
-            self.assertEqual(result, 2)
-            self.assertIn("confirmation required", stderr)
-
     def test_documented_execution_commands(self) -> None:
         commands = [
             (("execution-list", "--status", "error"), "GET", "/executions"),
             (("execution-get", "exec_1"), "GET", "/executions/exec_1"),
-            (("execution-retry", "exec_1"), "POST", "/executions/exec_1/retry"),
+            (
+                ("execution-retry", "exec_1", "--confirm"),
+                "POST",
+                "/executions/exec_1/retry",
+            ),
             (
                 ("execution-stop", "exec_1", "--confirm"),
                 "POST",
                 "/executions/exec_1/stop",
-            ),
-            (
-                ("execution-delete", "exec_1", "--confirm"),
-                "DELETE",
-                "/executions/exec_1",
             ),
         ]
         for arguments, method, path in commands:
@@ -464,8 +405,8 @@ class N8nApiTests(unittest.TestCase):
                 if method == "GET":
                     self.assertIn("redactExecutionData=true", request["path"])
         for command in (
+            ("execution-retry", "exec_1"),
             ("execution-stop", "exec_1"),
-            ("execution-delete", "exec_1"),
         ):
             result, _stdout, stderr = self.run_cli(*command)
             self.assertEqual(result, 2)
@@ -524,6 +465,12 @@ class N8nApiTests(unittest.TestCase):
             "packages",
             "community-packages",
             "install-package",
+            "credential-list",
+            "credential-get",
+            "credential-create",
+            "credential-update",
+            "credential-delete",
+            "execution-delete",
         }
         self.assertTrue(commands.isdisjoint(forbidden))
         self.assertIn("servers", commands)

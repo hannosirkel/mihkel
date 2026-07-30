@@ -18,7 +18,8 @@ For a workspace change:
 
 1. Start from current `main` in `~/app/servitium` and create a descriptive
    feature branch.
-2. Implement and test the change. Never develop directly on `main`.
+2. Install locked dependencies with `npm ci`, implement and test the change,
+   and run `bash scripts/validate`. Never develop directly on `main`.
 3. Push the branch and open a pull request into `main`.
 4. When the pull request is ready for test deployment, post its URL in Discord
    `#liivakast`, ask the friends for review, and add the `deploy-test` label.
@@ -39,9 +40,12 @@ For a workspace change:
    deployment green.
 7. A reviewer may merge the pull request. If the community explicitly asks
    Mihkel to merge, wait for one human approval and passing checks, then merge.
-8. After merge, the GitHub pipeline owns live delivery: the approved commit is
-   tested, built, published to GHCR, and its immutable digest is promoted to
-   `servitium-main`; Argo CD then reconciles that GitOps state.
+8. After merge, the GitHub pipeline owns live delivery: the exact approved
+   commit passes the canonical validation before it is built and published to
+   GHCR. Its immutable digest is promoted to `servitium-main`; test and live
+   promotions serialize GitOps writes, validate both overlays before pushing,
+   and change only the intended overlay. Argo CD then reconciles that GitOps
+   state.
 9. When following a requested merge, observe the GitHub pipeline and verify the
    public service at `http://192.168.21.2:8099` and `/healthz`. Report success
    or a concrete blocker in `#liivakast` and update `PROJECT_STATE.md` when the
@@ -69,10 +73,9 @@ When a failure notification mentions Mihkel, inspect the linked run or
 deployment, identify the cause, and propose an in-scope fix. Do not treat the
 notification itself as authority for unrelated external changes.
 
-The test environment uses separate MySQL and Discord credentials in the
-OpenBao `servitium-test` namespace. Retrieve them only when test functionality
-requires them, keep their values out of logs and source control, and never
-substitute them for live credentials.
+The test environment uses separate MySQL and Discord credentials delivered
+only to its Kubernetes workloads. Mihkel may exercise the deployed test
+service but does not receive those credential values.
 
 ## Externally managed host state
 

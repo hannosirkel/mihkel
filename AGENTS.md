@@ -12,6 +12,12 @@ the same commit. Architectural rationale belongs in `docs/decisions/`; active
 plans may be committed in `docs/working/`. See
 [`docs/AGENTS.md`](./docs/AGENTS.md) for upkeep rules.
 
+Run the canonical repository validation before handoff:
+
+```bash
+bash scripts/validate
+```
+
 - Keep durable instructions, decisions, project notes, and reusable skills in
   this repository.
 - Record dated working memory below `memory/`; distill durable facts into
