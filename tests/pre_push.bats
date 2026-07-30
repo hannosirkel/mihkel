@@ -1,9 +1,11 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
+
+@test "pre-push rejects a secret and permits safe history" {
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+repo_root="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 test_root="$(mktemp -d)"
-trap 'rm -rf -- "$test_root"' EXIT
+trap 'rm -rf -- "$test_root"' RETURN
 
 git init --bare --quiet "$test_root/remote.git"
 git init --quiet --initial-branch=main "$test_root/work"
@@ -63,3 +65,4 @@ git -C "$test_root/work" commit --quiet --amend -m 'test: add safe text'
 PATH="$test_root/bin:$PATH" git -C "$test_root/work" push --quiet origin main
 
 echo "pre-push hook tests passed"
+}

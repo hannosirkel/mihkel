@@ -103,16 +103,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_confirmation(add_id_command(subparsers, "workflow-deactivate"))
     add_confirmation(add_id_command(subparsers, "workflow-delete"))
 
-    credential_list = subparsers.add_parser("credential-list")
-    add_list_options(credential_list)
-    add_id_command(subparsers, "credential-get")
-    credential_create = subparsers.add_parser("credential-create")
-    add_input_option(credential_create)
-    credential_update = add_id_command(subparsers, "credential-update")
-    add_input_option(credential_update)
-    add_confirmation(credential_update)
-    add_confirmation(add_id_command(subparsers, "credential-delete"))
-
     execution_list = subparsers.add_parser("execution-list")
     add_list_options(execution_list)
     execution_list.add_argument(
@@ -136,8 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Retry with the current saved workflow definition.",
     )
+    add_confirmation(execution_retry)
     add_confirmation(add_id_command(subparsers, "execution-stop"))
-    add_confirmation(add_id_command(subparsers, "execution-delete"))
     subparsers.add_parser("servers")
     subparsers.add_parser("salmon")
     return parser
@@ -440,7 +430,6 @@ def redact_value(value: Any, secret: str) -> Any:
 
 def dispatch(arguments: argparse.Namespace, client: ApiClient) -> tuple[Any, bool]:
     command = arguments.command
-    credential_context = command.startswith("credential-")
 
     if command == "workflow-list":
         query = {
@@ -478,31 +467,6 @@ def dispatch(arguments: argparse.Namespace, client: ApiClient) -> tuple[Any, boo
         identifier = require_identifier(arguments.id)
         return client.request("DELETE", f"/workflows/{identifier}"), False
 
-    if command == "credential-list":
-        return client.list_all(
-            "/credentials",
-            {"limit": arguments.limit, "cursor": arguments.cursor},
-        ), credential_context
-    if command == "credential-get":
-        identifier = require_identifier(arguments.id)
-        return client.request("GET", f"/credentials/{identifier}"), credential_context
-    if command == "credential-create":
-        return client.request(
-            "POST", "/credentials", body=read_json_object(arguments.input)
-        ), credential_context
-    if command == "credential-update":
-        require_confirmation(arguments)
-        identifier = require_identifier(arguments.id)
-        return client.request(
-            "PATCH",
-            f"/credentials/{identifier}",
-            body=read_json_object(arguments.input),
-        ), credential_context
-    if command == "credential-delete":
-        require_confirmation(arguments)
-        identifier = require_identifier(arguments.id)
-        return client.request("DELETE", f"/credentials/{identifier}"), credential_context
-
     if command == "execution-list":
         return client.list_all(
             "/executions",
@@ -522,6 +486,7 @@ def dispatch(arguments: argparse.Namespace, client: ApiClient) -> tuple[Any, boo
             query={"redactExecutionData": True},
         ), False
     if command == "execution-retry":
+        require_confirmation(arguments)
         identifier = require_identifier(arguments.id)
         body = {"loadWorkflow": True} if arguments.latest_workflow else None
         return client.request(
@@ -531,10 +496,6 @@ def dispatch(arguments: argparse.Namespace, client: ApiClient) -> tuple[Any, boo
         require_confirmation(arguments)
         identifier = require_identifier(arguments.id)
         return client.request("POST", f"/executions/{identifier}/stop"), False
-    if command == "execution-delete":
-        require_confirmation(arguments)
-        identifier = require_identifier(arguments.id)
-        return client.request("DELETE", f"/executions/{identifier}"), False
     raise CliError("unsupported command")
 
 

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+temporary="$(mktemp -d)"
+trap 'rm -rf -- "$temporary"' EXIT
+
+cd "${project_root}"
+python3 -m unittest discover -s tests -p 'test_*.py'
+node --test workflows/hetzner-auction-monitor/logic.test.js
+bats tests/pre_push.bats
+
+cp -R workflows/hetzner-auction-monitor \
+  "${temporary}/hetzner-auction-monitor"
+node "${temporary}/hetzner-auction-monitor/generate-workflow.js"
+cmp workflows/hetzner-auction-monitor/workflow.json \
+  "${temporary}/hetzner-auction-monitor/workflow.json"

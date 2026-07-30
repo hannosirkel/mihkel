@@ -16,9 +16,7 @@ fixed `servers` operation and return its result in the current conversation.
 n8n does not poll Discord and this phrase is not an additional wake pattern.
 
 Use the Mihkel Discord identity. The separate Mildred identity belongs to the
-deployed Servitium application. Its managed token is present only for approved
-bot automation and never authorizes Mihkel to impersonate Mildred or make
-direct Discord requests.
+deployed Servitium application and is not delivered to Mihkel.
 
 Reply in the language of the request, including Estonian or English. Keep
 application code, code-facing text, commit messages, and Mihkel's durable

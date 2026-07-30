@@ -10,7 +10,6 @@ Credential material may exist only at these designated locations:
 | `/keys/discord/application-id` | Mihkel Discord application ID |
 | `/keys/discord/public-key` | Mihkel Discord application public key |
 | `/keys/discord/mihkel-bot-token` | Mihkel Discord bot token |
-| `/keys/discord/mildred-bot-token` | Mildred Discord token for approved bot automation |
 | `/keys/openclaw/gateway-token` | Local OpenClaw Gateway authentication |
 | `/keys/codex/` | Codex CLI configuration and OAuth state |
 | `/home/mihkel/.openclaw/agents/main/agent/` | Separate OpenClaw main-agent model profiles and state |
@@ -49,8 +48,12 @@ Never copy, merge, or synchronize their state. The paths above, their contents,
 permissions, and lifecycle are externally managed; inspect metadata only when
 diagnosing and request an Orange repository change when they need alteration.
 
-The separately managed Mildred token supports approved bot automation and must
-not be used to impersonate Mildred or make direct Discord requests. The VM
-cannot access Servitium's production MySQL password. Mihkel must not request,
-retrieve, proxy, or reproduce credentials outside the managed paths and
-approved helpers above.
+The VM receives no Servitium live or test application credential. Mihkel must
+not request, retrieve, proxy, or reproduce credentials outside the managed
+paths and approved helpers above.
+
+Mihkel has root inside the disposable VM. Root can bypass in-guest file modes,
+prompts, helpers, and OpenClaw settings and can directly use every credential
+deliberately installed there. The enforceable boundary is Orange networking
+and virtualization plus external GitHub, Discord, n8n, and model-provider
+scope.

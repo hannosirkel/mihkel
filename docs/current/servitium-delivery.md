@@ -5,10 +5,11 @@ procedure. Development occurs in `~/app/servitium` on a feature branch from
 current `main`.
 
 Mihkel implements and validates changes, pushes a reviewable branch, and opens
-a pull request. Adding `deploy-test` deploys the exact validated PR head to the
-isolated test environment. Mihkel verifies the test endpoint and fixes failures
-on the same branch. Re-deploying an unchanged PR requires removing and
-re-adding the label.
+a pull request. After dependency installation, `bash scripts/validate` is the
+canonical local, pull-request, and release validation entry point. Adding
+`deploy-test` deploys the exact validated PR head to the isolated test
+environment. Mihkel verifies the test endpoint and fixes failures on the same
+branch. Re-deploying an unchanged PR requires removing and re-adding the label.
 
 After GitHub promotion succeeds, endpoint verification polls the expected
 revision for up to five minutes at roughly ten-second intervals. Verification
@@ -18,7 +19,9 @@ not reported as a blocker or lingering deployment state.
 
 A human reviewer normally merges. Mihkel merges only when explicitly asked,
 after one human approval and passing checks. The GitHub pipeline builds and
-promotes immutable images after merge; Argo CD reconciles test and live state.
+promotes immutable images after merge. Test and live promotion share one
+serialization group, update only their intended overlay, and render both
+overlays before an ordinary push. Argo CD reconciles test and live state.
 Mihkel does not write directly to the GitOps repository, force-push protected
 branches, approve its own PR, or manually mutate Argo-owned resources.
 

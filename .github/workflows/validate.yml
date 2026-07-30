@@ -11,13 +11,22 @@ permissions:
   contents: read
 
 jobs:
-  secret-scan:
+  validate:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
+
+      - name: Install Bats
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bats
+
+      - name: Run canonical validation
+        run: bash scripts/validate
 
       - name: Download pinned gitleaks
         env:

@@ -42,6 +42,11 @@ managed command links, credentials, baseline packages, Docker configuration,
 and Git credential/hook plumbing are inspect-only. Diagnose with read-only
 commands and request the corresponding Orange repository change.
 
+The n8n Community API key has the bot-purpose owner's account-wide API
+authority. Use the reviewed helper as the supported interface, while
+recognizing that VM root can bypass it. Credential objects remain owned by
+Orange's explicit n8n credential lifecycle.
+
 ## Capability inventory
 
 Codex and OpenClaw expose tools dynamically, so inspect the tools available in
