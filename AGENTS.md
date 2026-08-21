@@ -1,16 +1,60 @@
 # Mihkel Workspace Instructions
 
+<!-- BEGIN MANAGED ARCHITECTURE BASELINE -->
+<!-- Generated from hannosirkel/architecture. Do not edit inside these markers.
+     Regenerate with: tooling/universe sync-baseline mihkel -->
+
+Governed by [`architecture`](https://github.com/hannosirkel/architecture).
+
+| | |
+| --- | --- |
+| Profile | `application-public` |
+| Visibility | declared public, currently public |
+| Public-safe required | yes |
+| Languages | typescript, python, shell |
+
+**Standards that apply here.** Read a standard before you change something it
+governs.
+
+- [Agent operation](https://github.com/hannosirkel/architecture/blob/main/standards/agent-operation.md) — worktrees, branches, multi-agent safety, delegation
+- [Security](https://github.com/hannosirkel/architecture/blob/main/standards/security.md) — secrets, public and private boundaries, workflow hardening
+- [Code quality](https://github.com/hannosirkel/architecture/blob/main/standards/code-quality.md) — gates, coaching, testing, review cutoff
+- [Repository contract](https://github.com/hannosirkel/architecture/blob/main/standards/repository-contract.md) — required files, profiles, skills
+- Language standards: [typescript](https://github.com/hannosirkel/architecture/blob/main/standards/languages/typescript.md), [python](https://github.com/hannosirkel/architecture/blob/main/standards/languages/python.md), [shell](https://github.com/hannosirkel/architecture/blob/main/standards/languages/shell.md)
+
+**Never commit to a default branch.** Work in `~/app/.worktrees/mihkel/<task>`,
+branch from `origin/main`, and open a pull request.
+
+**This repository must be safe to publish.** Never commit a password, token, key, kubeconfig,
+rendered Secret, or live export. No repository here holds a secret value, and a
+private one is no exception.
+
+**Run `habit-hooks` before declaring an edit done.** If it is not on `PATH`:
+
+```bash
+uv tool install "habit-hooks[python,typescript]"
+```
+
+Name every language in that one command. A later install naming a different
+extra silently replaces this one. Then re-run `habit-hooks`.
+
+<!-- END MANAGED ARCHITECTURE BASELINE -->
+
 This repository is Mihkel's durable home. At the start of a task, inspect the
 relevant repository instructions, Git status, and current state before acting.
 Read `SOUL.md`, `IDENTITY.md`, and `PROJECT_STATE.md` for substantial work.
 Read `ACCESS.md` before credential-dependent or external access, and read
 `WORKFLOWS.md` before GitHub or Servitium actions.
 
-Durable documentation lives in [`docs/`](./docs/). Read the relevant
-`docs/current/` files before changing documented behavior and update them in
-the same commit. Architectural rationale belongs in `docs/decisions/`; active
-plans may be committed in `docs/working/`. See
-[`docs/AGENTS.md`](./docs/AGENTS.md) for upkeep rules.
+Durable documentation lives in [`docs/`](./docs/) and follows the
+[documentation standard](https://github.com/hannosirkel/architecture/blob/main/standards/documentation.md).
+Update the matching `docs/current/` file in the same commit when behavior
+changes.
+
+The root instruction files stay authoritative instructions or concise live
+state: `SOUL.md`, `IDENTITY.md`, `ACCESS.md`, `WORKFLOWS.md`, and
+`PROJECT_STATE.md`. `docs/current/` explains their durable operating model. It
+never copies secret material or volatile status out of them.
 
 Run the canonical repository validation before handoff:
 
@@ -42,6 +86,12 @@ bash scripts/validate
   tooling are encouraged when useful, provided they do not replace or alter an
   externally managed component. Access outside the VM remains limited to the
   explicitly documented interfaces and workflows.
+
+## Local exceptions
+
+The ten root instruction documents are an approved exception to the
+documentation standard's "root documents stay few" rule. See
+[`docs/decisions/0004-keep-the-root-instruction-documents.md`](./docs/decisions/0004-keep-the-root-instruction-documents.md).
 
 ## n8n
 

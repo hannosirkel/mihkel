@@ -1,0 +1,88 @@
+# Generated from hannosirkel/architecture. Do not edit by hand.
+# Regenerate with: tooling/universe sync-baseline mihkel
+
+plugins = ["typescript", "python", "generic"]
+files = [
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.mjs",
+  "**/*.cjs",
+  "!**/node_modules/**",
+  "!**/.next/**",
+  "!**/dist/**",
+  "!**/build/**",
+  "**/*.py",
+  "!**/.venv/**",
+  "!**/venv/**",
+  "!**/site-packages/**",
+  "**/*.sh",
+  "**/*.bats",
+  "**/*.md",
+  "**/*.yaml",
+  "**/*.yml",
+]
+
+[sensors.comment]
+files = [
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.mjs",
+  "**/*.cjs",
+  "!**/node_modules/**",
+  "!**/.next/**",
+  "!**/dist/**",
+  "!**/build/**",
+]
+
+[sensors.deptry]
+files = [
+  "**/*.py",
+  "!**/.venv/**",
+  "!**/venv/**",
+  "!**/site-packages/**",
+]
+
+[sensors.eslint]
+files = [
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.mjs",
+  "**/*.cjs",
+  "!**/node_modules/**",
+  "!**/.next/**",
+  "!**/dist/**",
+  "!**/build/**",
+]
+
+[sensors.knip]
+files = [
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.mjs",
+  "**/*.cjs",
+  "!**/node_modules/**",
+  "!**/.next/**",
+  "!**/dist/**",
+  "!**/build/**",
+]
+
+[sensors.ruff]
+files = [
+  "**/*.py",
+  "!**/.venv/**",
+  "!**/venv/**",
+  "!**/site-packages/**",
+]
+
+# The plugin default is 200; the universe standard is this.
+[sensors.line-count]
+args = ["--max", "400"]
+
+# No npm project here, so jscpd cannot resolve from
+# node_modules/.bin. line-count is built in and still runs.
+[sensors.jscpd]
+disabled = true
