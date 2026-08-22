@@ -6,6 +6,23 @@ temporary="$(mktemp -d)"
 trap 'rm -rf -- "$temporary"' EXIT
 
 cd "${project_root}"
+
+require() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf 'validate: %s is required and is not on PATH\n' "$1" >&2
+    exit 1
+  fi
+}
+
+# A tool that cannot run fails loudly rather than passing silently.
+# See https://github.com/hannosirkel/architecture/blob/main/standards/code-quality.md
+require git
+require python3
+require node
+require bats
+require ruff
+require shellcheck
+
 python3 -m unittest discover -s tests -p 'test_*.py'
 for logic_test in workflows/*/logic.test.js; do
   node --test "${logic_test}"
@@ -20,3 +37,36 @@ for generator in workflows/*/generate-workflow.js; do
   cmp "${workflow_directory}/workflow.json" \
     "${temporary}/${workflow_name}/workflow.json"
 done
+
+# Linters. Both gate on new work only. Today's findings are recorded in the
+# files themselves — `# noqa:` for ruff, `# shellcheck disable=` for shellcheck
+# — so a later run reports only what a change introduced.
+ruff check .
+
+# Shell does not announce itself: it is any *.sh or *.bats file, plus any
+# executable whose shebang names a shell. Discovering the set beats listing it,
+# because a script added later is linted without anyone remembering to say so.
+# The listing includes unstaged new files, so a script fails here rather than
+# first failing in CI.
+shell_sources=()
+while IFS= read -r -d '' candidate; do
+  case "${candidate}" in
+    *.sh | *.bats)
+      shell_sources+=("${candidate}")
+      continue
+      ;;
+  esac
+  [ -x "${candidate}" ] || continue
+  IFS= read -r shebang <"${candidate}" || continue
+  case "${shebang}" in
+    '#!'*sh | '#!'*sh[[:space:]]*)
+      shell_sources+=("${candidate}")
+      ;;
+  esac
+done < <(git ls-files --cached --others --exclude-standard -z)
+
+if [ "${#shell_sources[@]}" -eq 0 ]; then
+  printf 'validate: found no shell to lint, which cannot be right\n' >&2
+  exit 1
+fi
+shellcheck -- "${shell_sources[@]}"

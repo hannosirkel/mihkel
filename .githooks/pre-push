@@ -9,6 +9,10 @@ fi
 zero_sha=0000000000000000000000000000000000000000
 status=0
 
+# Baselined pre-existing finding, not a fix. Git feeds this hook four
+# whitespace-separated fields per line and only two are read; naming the other
+# two documents the protocol and keeps the positional read correct.
+# shellcheck disable=SC2034
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ "$local_sha" == "$zero_sha" ]]; then
     continue

@@ -1,0 +1,28 @@
+{
+  // Layout checking for this repository. Wording is a review concern.
+  //
+  // Every rule turned off below is a baselined pre-existing finding, not a
+  // preference. The root instruction documents and the generated AGENTS.md
+  // section are not this gate's to rewrite.
+  "config": {
+    "default": true,
+
+    // 37 pre-existing findings, six of them inside the generated
+    // "MANAGED ARCHITECTURE BASELINE" section of AGENTS.md, whose long
+    // standards links cannot wrap and are not editable here. Prose wraps at 80
+    // columns by convention; a table row or a pinned SHA cannot.
+    "MD013": false,
+
+    // 8 pre-existing findings in ACCESS.md and skills/n8n/SKILL.md, all of the
+    // "table pipe is missing space to the left" kind. Purely cosmetic pipe
+    // alignment in two operating documents; reformatting them is out of scope.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "node_modules/**",
+    // Dated working artifacts, kept as they were written. A plan is a record of
+    // what was decided on a day, not prose this repository maintains.
+    "docs/superpowers/**"
+  ]
+}
