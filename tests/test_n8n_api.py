@@ -1,6 +1,6 @@
 """Contract tests for the reviewed n8n Community API helper."""
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import contextlib
 import importlib.util
@@ -32,8 +32,8 @@ def load_helper():
 
 
 class FakeN8nHandler(BaseHTTPRequestHandler):
-    requests: list[dict[str, object]] = []
-    responses: list[tuple[int, object]] = []
+    requests: list[dict[str, object]] = []  # noqa: RUF012
+    responses: list[tuple[int, object]] = []  # noqa: RUF012
 
     def _handle(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))

@@ -62,6 +62,10 @@ Run the canonical repository validation before handoff:
 bash scripts/validate
 ```
 
+It is the whole gate, `ruff` and `shellcheck` included, and both block on new
+work only. [`docs/current/workspace.md`](./docs/current/workspace.md) has the
+baseline counts and the tools it needs.
+
 - Keep durable instructions, decisions, project notes, and reusable skills in
   this repository.
 - Record dated working memory below `memory/`; distill durable facts into
@@ -92,6 +96,11 @@ bash scripts/validate
 The ten root instruction documents are an approved exception to the
 documentation standard's "root documents stay few" rule. See
 [`docs/decisions/0004-keep-the-root-instruction-documents.md`](./docs/decisions/0004-keep-the-root-instruction-documents.md).
+
+**No ESLint gate and no `package.json`.** The audit's `missing-gate` for
+`typescript` is expected and answered; never add a `package.json`, a lockfile, or
+`node_modules` to satisfy it. See
+[`docs/decisions/0005-no-npm-project-for-the-javascript-gate.md`](./docs/decisions/0005-no-npm-project-for-the-javascript-gate.md).
 
 ## n8n
 

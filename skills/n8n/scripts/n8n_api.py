@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Narrow, credential-safe client for the n8n Community API."""
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import argparse
 from dataclasses import dataclass
