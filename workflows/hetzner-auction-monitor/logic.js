@@ -69,6 +69,48 @@ function money(valueCents) {
   return `€${(valueCents / 100).toFixed(2)}`;
 }
 
+function flattenProduct(product) {
+  if (!product?.Hardware || !product?.Prices || !product?.Details) return product;
+  const hardware = product.Hardware;
+  const storage = hardware.Storage;
+  const monthlyPrice = product.Prices.monthly?.EUR;
+  const setupPrice = product.Prices.setup?.EUR;
+  const ipv4Price = product.IPPrices?.monthly?.EUR;
+  const validMoney = (value, allowZero) =>
+    typeof value === "number" && Number.isFinite(value) && (allowZero ? value >= 0 : value > 0);
+  if (
+    typeof hardware.CPU?.Name !== "string" ||
+    hardware.RAM?.SizeUnit !== "GB" ||
+    !Number.isFinite(Number(hardware.RAM.Size)) ||
+    hardware.RAM.Size <= 0 ||
+    storage?.SizeUnit !== "GB" ||
+    !Number.isInteger(Number(storage.Amount)) ||
+    storage.Amount <= 0 ||
+    !Array.isArray(storage.Disks) ||
+    !storage.Details ||
+    typeof storage.Details !== "object" ||
+    !validMoney(monthlyPrice, false) ||
+    !validMoney(setupPrice, true) ||
+    !validMoney(ipv4Price, true)
+  ) {
+    throw new Error("Nested product schema is incompatible");
+  }
+  return {
+    id: product.Id,
+    cpu: hardware.CPU.Name,
+    ram_size: hardware.RAM.Size,
+    price: monthlyPrice,
+    setup_price: setupPrice,
+    hdd_count: storage.Amount,
+    hdd_arr: storage.Disks,
+    serverDiskData: storage.Details,
+    datacenter: product.Details.Datacenter?.Name,
+    bandwidth: product.Details.Bandwidth,
+    ip_price: { Monthly: ipv4Price },
+    next_reduce_timestamp: product.Timer?.ReduceNextTimestamp,
+  };
+}
+
 function storageFor(product) {
   const diskData = product.serverDiskData;
   if (!diskData || typeof diskData !== "object") {
@@ -99,6 +141,7 @@ function storageFor(product) {
 
 function normalizeProduct(product, config = DEFAULT_CONFIG, cpuMarks = CPU_MARKS) {
   if (!product || typeof product !== "object") throw new Error("Product is not an object");
+  product = flattenProduct(product);
   const id = String(product.id ?? product.key ?? "");
   const cpu = String(product.cpu ?? "").trim();
   const cpuMark = cpuMarks[cpu];

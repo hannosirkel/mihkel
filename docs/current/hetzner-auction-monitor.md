@@ -5,6 +5,10 @@ The bot-only n8n instance runs one deterministic workflow named
 every five minutes and sends newly eligible listings to Discord through the
 managed Mildred credential. It has no server ordering capability.
 
+Hetzner's current feed nests hardware, EUR prices, datacenter, bandwidth, and
+auction timer fields. The workflow normalizes that upstream shape before it
+applies the established hardware, VAT, ordering, and deduplication rules.
+
 When Mihkel receives an invoked request for `n8n servers`, Mihkel calls the
 reviewed n8n helper's fixed authenticated `/webhook/mihkel-servers` operation
 and returns its response in the current conversation. n8n does not poll

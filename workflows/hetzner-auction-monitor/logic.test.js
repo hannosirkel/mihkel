@@ -2,6 +2,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   DEFAULT_CONFIG,
   grossCents,
@@ -22,6 +24,50 @@ function product(overrides = {}) {
     datacenter: "FSN1-DC1",
     bandwidth: 1000,
     ip_price: { Monthly: 1.7 },
+    ...overrides,
+  };
+}
+
+function nestedProduct(overrides = {}) {
+  return {
+    Id: 42,
+    Hardware: {
+      CPU: { Name: "Intel Core i7-7700", CoreCount: 1 },
+      RAM: { RealSize: 16384, Size: 64, SizeUnit: "GB", Amount: 4, ecc: false },
+      Storage: {
+        RealSize: 960,
+        Size: 480,
+        SizeUnit: "GB",
+        Amount: 2,
+        Disks: ["480 GB SSD", "480 GB SSD"],
+        Details: { nvme: [], sata: [480, 480], hdd: [], general: [480] },
+      },
+    },
+    Prices: {
+      monthly: { EUR: 46.69, USD: 52 },
+      hourly: { EUR: 0.0748, USD: 0.0833 },
+      setup: { EUR: 0, USD: 0 },
+      fixed: false,
+    },
+    IPPrices: {
+      monthly: { EUR: 1.7, USD: 1.9 },
+      hourly: { EUR: 0.0027, USD: 0.003 },
+      Amount: 1,
+    },
+    Details: {
+      Description: [],
+      Information: [],
+      Specials: ["IPv4", "iNIC"],
+      Traffic: "unlimited",
+      Bandwidth: 1000,
+      OS: ["Rescue system"],
+      Datacenter: { Name: "FSN1-DC8", Datacenter: "#FSN1-DC8" },
+    },
+    Timer: {
+      ReduceNext: 120,
+      ReduceNextHr: true,
+      ReduceNextTimestamp: 1788747075,
+    },
     ...overrides,
   };
 }
@@ -59,6 +105,73 @@ test("money uses integer cents, includes IPv4 and qualifies exactly at 60", () =
   assert.equal(equal.monthlyGrossCents, 6000);
   assert.equal(above.monthlyGrossCents > 6000, true);
   assert.equal(grossCents(Math.round((59.5 / 1.19) * 100), 0.24), 6200);
+});
+
+test("current nested Hetzner feed records preserve normalized server behavior", () => {
+  assert.deepEqual(normalizeProduct(nestedProduct()), {
+    id: "42",
+    cpu: "Intel Core i7-7700",
+    cpuMark: 8643,
+    memoryGb: 64,
+    storage: "480 GB SSD + 480 GB SSD",
+    storageAmbiguous: false,
+    hardwareMatch: true,
+    monthlyNetCents: 4839,
+    monthlyGrossCents: 6000,
+    setupGrossCents: 0,
+    ipv4Included: true,
+    ipv4NetCents: 170,
+    datacenter: "FSN1-DC8",
+    bandwidthMbps: 1000,
+    nextReduction: "2026-09-07T02:11:15.000Z",
+    link: "https://www.hetzner.com/sb/",
+  });
+});
+
+test("malformed nested pricing and units fail closed", () => {
+  const invalidProducts = [
+    (() => {
+      const value = nestedProduct();
+      delete value.Prices.monthly.EUR;
+      return value;
+    })(),
+    nestedProduct({
+      Prices: {
+        monthly: { EUR: -1 },
+        setup: { EUR: 0 },
+      },
+    }),
+    (() => {
+      const value = nestedProduct();
+      delete value.IPPrices.monthly.EUR;
+      return value;
+    })(),
+    (() => {
+      const value = nestedProduct();
+      value.Hardware.RAM.SizeUnit = "MB";
+      return value;
+    })(),
+    (() => {
+      const value = nestedProduct();
+      value.Hardware.Storage.SizeUnit = "TB";
+      return value;
+    })(),
+  ];
+  for (const value of invalidProducts) {
+    const outcome = processInventory([value], { mode: "on_demand" });
+    assert.equal(outcome.diagnostics.malformed, 1);
+    assert.deepEqual(outcome.results, []);
+  }
+});
+
+test("generated workflow fetches the current nested Hetzner auction feed", () => {
+  const workflow = JSON.parse(fs.readFileSync(path.join(__dirname, "workflow.json"), "utf8"));
+  const configuration = workflow.nodes.find((node) => node.name === "Central Configuration");
+  const values = JSON.parse(configuration.parameters.jsonOutput);
+  assert.equal(
+    values.HETZNER_FEED_URL,
+    "https://www.hetzner.com/_resources/app/data/app/live_data_sb.json",
+  );
 });
 
 test("scheduled state alerts once and alerts after an above-to-below transition", () => {

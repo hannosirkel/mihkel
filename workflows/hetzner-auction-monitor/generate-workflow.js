@@ -21,7 +21,7 @@ const config = {
   CPU_BASELINE_MODEL: "Intel Core i7-7700",
   CPU_BASELINE_MARK: 8643,
   DEDUP_RETENTION_DAYS: 30,
-  HETZNER_FEED_URL: "https://www.hetzner.com/_resources/app/data/app/live_data_sb_EUR.json",
+  HETZNER_FEED_URL: "https://www.hetzner.com/_resources/app/data/app/live_data_sb.json",
   DISCORD_CHANNEL_ID: "1485193388012601416",
 };
 
