@@ -1,9 +1,13 @@
 # Hetzner Auction Monitor
 
 The bot-only n8n instance runs one deterministic workflow named
-`Hetzner Auction Monitor`. It polls Hetzner's public Server Auction EUR feed
+`Hetzner Auction Monitor`. It polls Hetzner's public Server Auction feed
 every five minutes and sends newly eligible listings to Discord through the
 managed Mildred credential. It has no server ordering capability.
+
+Hetzner's current feed nests hardware, EUR prices, datacenter, bandwidth, and
+auction timer fields. The workflow normalizes that upstream shape before it
+applies the established hardware, VAT, ordering, and deduplication rules.
 
 When Mihkel receives an invoked request for `n8n servers`, Mihkel calls the
 reviewed n8n helper's fixed authenticated `/webhook/mihkel-servers` operation
@@ -14,9 +18,10 @@ monthly cost, including results above the immediate-alert ceiling. The
 on-demand path does not alter scheduled-alert state.
 
 Settings live in the workflow's `Central Configuration` node. Hardware requires
-at least 64 GB RAM, two physical SSD or NVMe drives of at least 480 GB each, and
-a reviewed PassMark Average CPU Mark of at least 8,643, the pinned Intel Core
-i7-7700 reference. Unknown CPU models and ambiguous storage fail closed.
+at least 128 GB RAM, at least two physical SSD or NVMe drives of at least 400 GB
+each, and a reviewed PassMark Average CPU Mark of at least 12,807, the pinned
+Intel Core i7-8700 reference. Unknown CPU models and ambiguous storage fail
+closed.
 
 Monthly pricing is computed in integer cents:
 
@@ -25,7 +30,8 @@ monthly_net_total = server_monthly_net + separately_priced_primary_ipv4_net
 estonia_gross = round(monthly_net_total * 1.24)
 ```
 
-The rounded gross amount is compared with the inclusive €60.00 alert ceiling.
+The monthly net total is compared with the strict €65.00 alert ceiling; an
+exactly €65.00 net listing does not qualify.
 One-time setup charges are excluded from eligibility and displayed when
 non-zero. Scheduled deduplication uses n8n workflow static data keyed by
 auction product ID with 30-day pruning.

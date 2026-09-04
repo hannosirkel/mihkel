@@ -34,3 +34,10 @@ no live managed-state change is currently requested.
 
 Delivery notifications are operational. See `WORKFLOWS.md` for the test and
 live deployment procedures.
+
+The Hetzner auction monitor source now follows Hetzner's nested auction feed
+schema and the requested 128 GB / i7-8700-class / two 400 GB SSD / under €65
+net criteria. Live n8n reconciliation remains pending because the owner API is
+currently returning a non-JSON response; the fixed webhook also returned an
+empty response while the deployed workflow still referenced Hetzner's retired
+feed URL.

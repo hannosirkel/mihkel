@@ -8,14 +8,14 @@ node workflows/hetzner-auction-monitor/generate-workflow.js
 node --test workflows/hetzner-auction-monitor/logic.test.js
 ```
 
-The workflow fetches Hetzner's public EUR Server Auction JSON feed every five
+The workflow fetches Hetzner's public Server Auction JSON feed every five
 minutes and through the authenticated `mihkel-servers` webhook. Mihkel invokes
 that fixed webhook when an already-invoked conversation asks for
 `n8n servers`; n8n does not poll Discord or wake OpenClaw. It never calls a
 Robot transaction, reservation, or ordering endpoint.
 
 CPU capability uses PassMark's multithread Average CPU Mark. The pinned
-i7-7700 baseline is 8,643. `CPU_MARKS` records reviewed PassMark snapshots for
+i7-8700 baseline is 12,807. `CPU_MARKS` records reviewed PassMark snapshots for
 CPU models seen in the Hetzner feed. A newly encountered model must be looked
 up on `cpubenchmark.net`, reviewed for an unambiguous exact model match, and
 added to the mapping; unknown models fail closed and are counted.

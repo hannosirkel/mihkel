@@ -11,17 +11,17 @@ const logic = fs
 
 const config = {
   POLL_INTERVAL_MINUTES: 5,
-  MAX_MONTHLY_GROSS_EUR: 60,
+  MAX_MONTHLY_NET_EUR: 65,
   ESTONIAN_VAT_RATE: 0.24,
   INCLUDE_PRIMARY_IPV4: true,
-  MIN_MEMORY_GB: 64,
+  MIN_MEMORY_GB: 128,
   MIN_SSD_COUNT: 2,
-  MIN_SSD_SIZE_GB: 480,
+  MIN_SSD_SIZE_GB: 400,
   ON_DEMAND_RESULT_LIMIT: 3,
-  CPU_BASELINE_MODEL: "Intel Core i7-7700",
-  CPU_BASELINE_MARK: 8643,
+  CPU_BASELINE_MODEL: "Intel Core i7-8700",
+  CPU_BASELINE_MARK: 12807,
   DEDUP_RETENTION_DAYS: 30,
-  HETZNER_FEED_URL: "https://www.hetzner.com/_resources/app/data/app/live_data_sb_EUR.json",
+  HETZNER_FEED_URL: "https://www.hetzner.com/_resources/app/data/app/live_data_sb.json",
   DISCORD_CHANNEL_ID: "1485193388012601416",
 };
 

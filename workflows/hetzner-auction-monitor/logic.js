@@ -2,15 +2,15 @@
 
 const DEFAULT_CONFIG = Object.freeze({
   POLL_INTERVAL_MINUTES: 5,
-  MAX_MONTHLY_GROSS_EUR: 60.0,
+  MAX_MONTHLY_NET_EUR: 65.0,
   ESTONIAN_VAT_RATE: 0.24,
   INCLUDE_PRIMARY_IPV4: true,
-  MIN_MEMORY_GB: 64,
+  MIN_MEMORY_GB: 128,
   MIN_SSD_COUNT: 2,
-  MIN_SSD_SIZE_GB: 480,
+  MIN_SSD_SIZE_GB: 400,
   ON_DEMAND_RESULT_LIMIT: 3,
-  CPU_BASELINE_MODEL: "Intel Core i7-7700",
-  CPU_BASELINE_MARK: 8643,
+  CPU_BASELINE_MODEL: "Intel Core i7-8700",
+  CPU_BASELINE_MARK: 12807,
   DEDUP_RETENTION_DAYS: 30,
 });
 
@@ -69,8 +69,51 @@ function money(valueCents) {
   return `€${(valueCents / 100).toFixed(2)}`;
 }
 
+function flattenProduct(product) {
+  if (!product?.Hardware || !product?.Prices || !product?.Details) return product;
+  const hardware = product.Hardware;
+  const storage = hardware.Storage;
+  const monthlyPrice = product.Prices.monthly?.EUR;
+  const setupPrice = product.Prices.setup?.EUR;
+  const ipv4Price = product.IPPrices?.monthly?.EUR;
+  const validMoney = (value, allowZero) =>
+    typeof value === "number" && Number.isFinite(value) && (allowZero ? value >= 0 : value > 0);
+  if (
+    typeof hardware.CPU?.Name !== "string" ||
+    hardware.RAM?.SizeUnit !== "GB" ||
+    !Number.isFinite(Number(hardware.RAM.Size)) ||
+    hardware.RAM.Size <= 0 ||
+    storage?.SizeUnit !== "GB" ||
+    !Number.isInteger(Number(storage.Amount)) ||
+    storage.Amount <= 0 ||
+    !Array.isArray(storage.Disks) ||
+    !storage.Details ||
+    typeof storage.Details !== "object" ||
+    !validMoney(monthlyPrice, false) ||
+    !validMoney(setupPrice, true) ||
+    !validMoney(ipv4Price, true)
+  ) {
+    throw new Error("Nested product schema is incompatible");
+  }
+  return {
+    id: product.Id,
+    cpu: hardware.CPU.Name,
+    ram_size: hardware.RAM.Size,
+    price: monthlyPrice,
+    setup_price: setupPrice,
+    hdd_count: storage.Amount,
+    hdd_arr: storage.Disks,
+    serverDiskData: storage.Details,
+    datacenter: product.Details.Datacenter?.Name,
+    bandwidth: product.Details.Bandwidth,
+    ip_price: { Monthly: ipv4Price },
+    next_reduce_timestamp: product.Timer?.ReduceNextTimestamp,
+  };
+}
+
 function storageFor(product) {
-  const diskData = product.serverDiskData;
+  const nestedStorage = product.Hardware?.Storage;
+  const diskData = product.serverDiskData || nestedStorage?.Details;
   if (!diskData || typeof diskData !== "object") {
     return { valid: false, ambiguous: true, solidState: [], display: "Unknown" };
   }
@@ -84,10 +127,15 @@ function storageFor(product) {
   const malformed = [...solidState.map((disk) => disk.size), ...hdd.map(Number)].some(
     (size) => !Number.isFinite(size) || size <= 0,
   );
-  const described = Array.isArray(product.hdd_arr) ? product.hdd_arr.join(" + ") : "";
+  const described = Array.isArray(product.hdd_arr)
+    ? product.hdd_arr.join(" + ")
+    : Array.isArray(nestedStorage?.Disks)
+      ? nestedStorage.Disks.join(" + ")
+      : "";
+  const diskCount = product.hdd_count ?? nestedStorage?.Amount ?? solidState.length + hdd.length;
   const ambiguous =
     malformed ||
-    solidState.length + hdd.length !== Number(product.hdd_count ?? solidState.length + hdd.length) ||
+    solidState.length + hdd.length !== Number(diskCount) ||
     (described && /(?:HDD|SAS)/i.test(described) && hdd.length === 0);
   return {
     valid: !ambiguous,
@@ -99,25 +147,27 @@ function storageFor(product) {
 
 function normalizeProduct(product, config = DEFAULT_CONFIG, cpuMarks = CPU_MARKS) {
   if (!product || typeof product !== "object") throw new Error("Product is not an object");
+  product = flattenProduct(product);
   const id = String(product.id ?? product.key ?? "");
   const cpu = String(product.cpu ?? "").trim();
   const cpuMark = cpuMarks[cpu];
-  const memoryGb = Number(product.ram_size);
+  const memoryGb = Number(product.ram_size ?? product.Hardware?.RAM?.Size);
   if (!id || !cpu || !Number.isFinite(memoryGb)) throw new Error("Missing required product fields");
 
   const storage = storageFor(product);
-  const baseNetCents = cents(product.price);
+  const baseNetCents = cents(product.price ?? product.Prices?.monthly?.EUR);
+  const ipv4MonthlyPrice = product.ip_price?.Monthly ?? product.IPPrices?.monthly?.EUR;
   const ipv4NetCents =
-    config.INCLUDE_PRIMARY_IPV4 && product.ip_price && product.ip_price.Monthly
-      ? cents(product.ip_price.Monthly)
+    config.INCLUDE_PRIMARY_IPV4 && ipv4MonthlyPrice
+      ? cents(ipv4MonthlyPrice)
       : 0;
   const monthlyNetCents = baseNetCents + ipv4NetCents;
   const monthlyGrossCents = grossCents(monthlyNetCents, config.ESTONIAN_VAT_RATE);
-  const setupNetCents = cents(product.setup_price ?? 0);
+  const setupNetCents = cents(product.setup_price ?? product.Prices?.setup?.EUR ?? 0);
   const qualifyingStorage =
     storage.valid &&
-    storage.solidState.length >= config.MIN_SSD_COUNT &&
-    storage.solidState.every((disk) => disk.size >= config.MIN_SSD_SIZE_GB);
+    storage.solidState.filter((disk) => disk.size >= config.MIN_SSD_SIZE_GB).length >=
+      config.MIN_SSD_COUNT;
   const hardwareMatch =
     Number.isFinite(cpuMark) &&
     cpuMark >= config.CPU_BASELINE_MARK &&
@@ -137,11 +187,16 @@ function normalizeProduct(product, config = DEFAULT_CONFIG, cpuMarks = CPU_MARKS
     setupGrossCents: grossCents(setupNetCents, config.ESTONIAN_VAT_RATE),
     ipv4Included: config.INCLUDE_PRIMARY_IPV4,
     ipv4NetCents,
-    datacenter: String(product.datacenter ?? "Unknown"),
-    bandwidthMbps: Number.isFinite(Number(product.bandwidth)) ? Number(product.bandwidth) : null,
+    datacenter: String(product.datacenter ?? product.Details?.Datacenter?.Name ?? "Unknown"),
+    bandwidthMbps: Number.isFinite(Number(product.bandwidth ?? product.Details?.Bandwidth))
+      ? Number(product.bandwidth ?? product.Details?.Bandwidth)
+      : null,
     nextReduction:
-      product.next_reduce_timestamp && Number(product.next_reduce_timestamp) > 0
-        ? new Date(Number(product.next_reduce_timestamp) * 1000).toISOString()
+      (product.next_reduce_timestamp ?? product.Timer?.ReduceNextTimestamp) &&
+      Number(product.next_reduce_timestamp ?? product.Timer?.ReduceNextTimestamp) > 0
+        ? new Date(
+            Number(product.next_reduce_timestamp ?? product.Timer?.ReduceNextTimestamp) * 1000,
+          ).toISOString()
         : null,
     link: "https://www.hetzner.com/sb/",
   };
@@ -185,7 +240,7 @@ function processInventory(products, options = {}) {
     if (!Number.isFinite(Number(alertedAt)) || Number(alertedAt) < cutoff) delete state.alerted[id];
   }
   const alerts = hardwareMatches
-    .filter((item) => item.monthlyGrossCents <= Math.round(config.MAX_MONTHLY_GROSS_EUR * 100))
+    .filter((item) => item.monthlyNetCents < Math.round(config.MAX_MONTHLY_NET_EUR * 100))
     .filter((item) => !state.alerted[item.id]);
   for (const item of alerts) state.alerted[item.id] = now;
   return { mode, results: alerts, diagnostics, state };
@@ -195,7 +250,7 @@ function formatServer(item, rank, config = DEFAULT_CONFIG) {
   const lines = [
     `${rank}. ${money(item.monthlyGrossCents)}/month incl. 24% Estonian VAT`,
     `Net: ${money(item.monthlyNetCents)} · IPv4: ${item.ipv4Included ? `included (${money(item.ipv4NetCents)} net)` : "not included"}`,
-    `Threshold: ${item.monthlyGrossCents <= config.MAX_MONTHLY_GROSS_EUR * 100 ? "at or below €60.00" : "above €60.00"}`,
+    `Threshold: ${item.monthlyNetCents < config.MAX_MONTHLY_NET_EUR * 100 ? "below €65.00 net" : "at or above €65.00 net"}`,
     `CPU: ${item.cpu} · PassMark ${item.cpuMark}`,
     `RAM: ${item.memoryGb} GB · Storage: ${item.storage}`,
     `Location: ${item.datacenter}${item.bandwidthMbps ? ` · Network: ${item.bandwidthMbps} Mbit/s` : ""}`,
